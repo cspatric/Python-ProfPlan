@@ -47,6 +47,37 @@ docker compose --profile dev --profile observability up -d    # everything
 docker compose run --rm lint                                  # run Ruff (lint/PEP 8)
 ```
 
+### Service URLs
+
+Once the stack is up, each service is reachable at:
+
+| Service | URL | Notes |
+|---------|-----|-------|
+| API (FastAPI) | http://api.localhost/health | Via Traefik. Add `127.0.0.1 api.localhost` to your hosts file, or send `Host: api.localhost` header |
+| Traefik dashboard | http://localhost:8080/dashboard/ | Router/service overview |
+| Flower (Celery) | http://localhost:5555 | Tasks, queues, workers |
+| Grafana | http://localhost:3000 | Default login `admin` / `admin` (Prometheus + Loki datasources pre-provisioned) |
+| Prometheus | http://localhost:9090 | Metrics |
+| MinIO console | http://localhost:9001 | Login with `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` from `.env` |
+| MinIO API (S3) | http://localhost:9000 | S3-compatible endpoint |
+| Adminer | http://localhost:8081 | DB UI — server `postgres`, credentials from `.env` |
+| Loki | http://localhost:3100 | Log API (`/ready`, `/loki/api/...`) |
+| OTel Collector | grpc `localhost:4317` / http `localhost:4318` | OTLP ingest |
+| PostgreSQL | _not exposed to the host_ | Reachable only inside the `backend` network |
+| Redis | _not exposed to the host_ | Reachable only inside the `backend` network |
+
+To add the API host entry on Linux/macOS:
+
+```bash
+echo "127.0.0.1 api.localhost" | sudo tee -a /etc/hosts
+```
+
+To stop everything (volumes/data are kept):
+
+```bash
+docker compose --profile dev --profile observability down
+```
+
 ## Linting & formatting
 
 Linting (PEP 8) and formatting are handled by [Ruff](https://docs.astral.sh/ruff/),
