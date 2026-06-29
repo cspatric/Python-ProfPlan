@@ -12,6 +12,19 @@ cp .env.example .env   # fill in the values
 docker compose up --build
 ```
 
+## Linting & formatting
+
+Linting (PEP 8) and formatting are handled by [Ruff](https://docs.astral.sh/ruff/),
+run through Docker — no local Python install required. Configuration lives in
+`pyproject.toml` under `[tool.ruff]`.
+
+```bash
+./scripts/lint.sh          # check for lint / PEP 8 issues
+./scripts/lint.sh --fix    # auto-fix what can be fixed
+./scripts/format.sh        # format the code
+./scripts/format.sh --check # verify formatting without writing
+```
+
 ## Contribution standards (Grupo Central)
 
 The entire project must be written in **English** (code, comments, commit
