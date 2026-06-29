@@ -88,13 +88,14 @@ class RefreshToken(Base):
         nullable=False,
         index=True,
     )
-    token_hash: Mapped[str] = mapped_column(
-        String(64), nullable=False, index=True
-    )
+    # Looked up only by primary key (session id), never by the hash itself,
+    # so token_hash is intentionally not indexed.
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     user_agent: Mapped[str | None] = mapped_column(String(512))
     ip_address: Mapped[str | None] = mapped_column(String(64))
+    # Indexed to support pruning of expired sessions.
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+        DateTime(timezone=True), nullable=False, index=True
     )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
@@ -121,6 +122,10 @@ class AuthLog(Base):
     )
     ip_address: Mapped[str | None] = mapped_column(String(64))
     user_agent: Mapped[str | None] = mapped_column(String(512))
+    # Indexed for time-ranged audit queries and log pruning.
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        index=True,
     )
