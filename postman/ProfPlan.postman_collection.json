@@ -1,0 +1,144 @@
+{
+  "info": {
+    "_postman_id": "b2f1c0a4-7e3d-4a1b-9c2e-profplan000001",
+    "name": "ProfPlan API",
+    "description": "ProfPlan backend endpoints. The API is served through Traefik on the host `api.localhost`, so every request sends a `Host: {{hostHeader}}` header and targets `{{baseUrl}}`. Postman manages the HttpOnly auth cookies automatically after login.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost",
+      "type": "string"
+    },
+    {
+      "key": "hostHeader",
+      "value": "api.localhost",
+      "type": "string"
+    },
+    {
+      "key": "apiPrefix",
+      "value": "/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "teste@profplan.com",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "Senha@123",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Host", "value": "{{hostHeader}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        },
+        "description": "Liveness/readiness probe (no auth)."
+      },
+      "response": []
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/auth/login",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Authenticate with email/password. Sets HttpOnly `access_token` and `refresh_token` cookies."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/auth/refresh",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["auth", "refresh"]
+            },
+            "description": "Rotate the refresh token (reads the refresh cookie) and re-issue both cookies."
+          },
+          "response": []
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/auth/me",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "Return the currently authenticated user (reads the access cookie)."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/auth/logout",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["auth", "logout"]
+            },
+            "description": "Revoke the current session and clear the auth cookies."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout All",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/auth/logout-all",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["auth", "logout-all"]
+            },
+            "description": "Revoke every session of the authenticated user (requires a valid access cookie)."
+          },
+          "response": []
+        }
+      ],
+      "description": "Cookie-based JWT authentication endpoints."
+    }
+  ]
+}

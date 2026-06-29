@@ -161,6 +161,13 @@ docker compose exec -e PYTHONPATH=/app api \
   python scripts/create_user.py user@example.com "Full Name" "Password@123"
 ```
 
+## Postman
+
+Import `postman/ProfPlan.postman_collection.json` (and the
+`postman/ProfPlan.local.postman_environment.json` environment) into Postman to
+try every endpoint. Requests send a `Host: api.localhost` header so they reach
+the API through Traefik, and Postman keeps the auth cookies between calls.
+
 ## Contribution standards (Grupo Central)
 
 The entire project must be written in **English** (code, comments, commit
