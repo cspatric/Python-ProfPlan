@@ -2,8 +2,27 @@
 
 ProfPlan backend — AI/RAG-powered teaching plans platform.
 
-Modular architecture (DDD) with FastAPI, PostgreSQL/pgvector, Redis, Celery,
-MinIO and an observability stack (Prometheus, Loki, Grafana, Traefik).
+Modular architecture with FastAPI, PostgreSQL/pgvector, Redis, Celery, MinIO and
+an observability stack (Prometheus, Loki, Grafana, Traefik).
+
+## Architecture
+
+The codebase follows a **layered / Clean Architecture** style that borrows the
+folder structure of DDD — it is **DDD-inspired, not full DDD**. We use the four
+layers (and services), but not the complete set of DDD rules (no formal
+aggregates, value objects or a strict ubiquitous language).
+
+Each feature lives under `app/modules/<feature>/` with four layers:
+
+| Layer | Folder | Responsibility |
+|-------|--------|----------------|
+| Presentation | `presentation/` | HTTP routers, request/response schemas, dependencies |
+| Application | `application/` | Use-case **services**, commands/queries, DTOs |
+| Domain | `domain/` | Business rules: entities, enums, interfaces, exceptions, events |
+| Infrastructure | `infrastructure/` | SQLAlchemy models, repositories, external adapters |
+
+Routers never touch the database directly — they call a service, which uses
+repositories.
 
 ## Stack
 
@@ -89,6 +108,57 @@ run through Docker — no local Python install required. Configuration lives in
 ./scripts/lint.sh --fix    # auto-fix what can be fixed
 ./scripts/format.sh        # format the code
 ./scripts/format.sh --check # verify formatting without writing
+```
+
+## Database migrations (Alembic)
+
+Every schema change goes through an Alembic migration — never edit the database
+by hand. Run Alembic inside the `api` container:
+
+```bash
+# create a migration from model changes
+docker compose exec api alembic revision --autogenerate -m "feat description"
+# apply migrations
+docker compose exec api alembic upgrade head
+# roll back the last migration
+docker compose exec api alembic downgrade -1
+```
+
+When you add a new module with tables, import its models in `alembic/env.py` so
+autogenerate can see them.
+
+## Authentication
+
+Cookie-based JWT authentication (login only for now; OAuth providers are
+modelled for later). Endpoints under `/api/v1/auth`:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/auth/login` | Authenticate with email/password, sets cookies |
+| POST | `/auth/refresh` | Rotate the refresh token, re-issues cookies |
+| POST | `/auth/logout` | Revoke the current session |
+| POST | `/auth/logout-all` | Revoke every session of the user |
+| GET | `/auth/me` | Return the authenticated user |
+
+Security properties:
+
+- **Access token** JWT (15 min) and **refresh token** JWT (30 days), the latter
+  stored only as a SHA-256 hash in `refresh_tokens`.
+- **HttpOnly** cookies, `Secure` (set `COOKIE_SECURE=true` behind HTTPS) and
+  `SameSite`.
+- Passwords hashed with **Argon2id**.
+- **Rotating** refresh tokens — each refresh revokes the old session and issues a
+  new one; presenting a revoked token triggers reuse detection and revokes all
+  sessions.
+- Session revocation (single device or all).
+- **Rate limiting** on login via Redis.
+- Authentication **audit log** (`auth_logs`).
+
+Create a user (development helper):
+
+```bash
+docker compose exec -e PYTHONPATH=/app api \
+  python scripts/create_user.py user@example.com "Full Name" "Password@123"
 ```
 
 ## Contribution standards (Grupo Central)
