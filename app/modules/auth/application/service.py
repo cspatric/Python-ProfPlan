@@ -1,7 +1,6 @@
 """Authentication use cases (login, refresh rotation, logout)."""
 
 import uuid
-from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import jwt
@@ -13,6 +12,7 @@ from app.core.security import (
     hash_token,
     verify_password,
 )
+from app.modules.auth.application.dto import IssuedTokens
 from app.modules.auth.domain.exceptions import (
     InvalidCredentialsError,
     InvalidTokenError,
@@ -28,17 +28,6 @@ from app.modules.auth.infrastructure.repository import (
 from app.modules.users.domain.entities import UserStatus
 from app.modules.users.infrastructure.models import User
 from app.modules.users.infrastructure.repository import UserRepository
-
-
-@dataclass(slots=True)
-class IssuedTokens:
-    """Result of issuing a new pair of tokens."""
-
-    access_token: str
-    access_expires_at: datetime
-    refresh_token: str
-    refresh_expires_at: datetime
-    user: User
 
 
 class AuthService:

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from app.core.config import get_settings
-from app.modules.auth.application.service import IssuedTokens
+from app.modules.auth.application.dto import IssuedTokens
 from app.modules.auth.domain.exceptions import (
     InvalidCredentialsError,
     InvalidTokenError,
