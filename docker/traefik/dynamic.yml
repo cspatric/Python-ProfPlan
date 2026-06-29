@@ -1,0 +1,14 @@
+# Traefik dynamic configuration (routing)
+http:
+  routers:
+    api:
+      rule: "Host(`api.localhost`)"
+      entryPoints:
+        - web
+      service: api-service
+
+  services:
+    api-service:
+      loadBalancer:
+        servers:
+          - url: "http://api:8000"
