@@ -251,6 +251,89 @@ services:
     logging: *default-logging
 
   # -------------------------------------------------------------------------
+  # Loki — log aggregation.
+  # -------------------------------------------------------------------------
+  loki:
+    image: grafana/loki:latest
+    profiles: ["observability"]
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./docker/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+    networks:
+      - backend
+    ports:
+      - "3100:3100"
+    # The Loki image is distroless (no shell/wget), so it has no container
+    # healthcheck; readiness is observed via /ready from other services.
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # OpenTelemetry Collector — receives traces/metrics/logs from the app.
+  # -------------------------------------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    profiles: ["observability"]
+    restart: unless-stopped
+    command: ["--config=/etc/otel/collector-config.yaml"]
+    volumes:
+      - ./docker/otel/collector-config.yaml:/etc/otel/collector-config.yaml:ro
+    networks:
+      - backend
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Prometheus — metrics.
+  # -------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: ["observability"]
+    restart: unless-stopped
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - backend
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Grafana — dashboards (datasources provisioned for Prometheus + Loki).
+  # -------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    profiles: ["observability"]
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_started
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./docker/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+    networks:
+      - backend
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
   # Ruff — lint / PEP 8, run on demand: `docker compose run --rm lint`
   # -------------------------------------------------------------------------
   lint:
