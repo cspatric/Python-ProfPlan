@@ -30,7 +30,15 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "ruff==0.9.6",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["app", "tests"]
+python_files = ["test_*.py"]
 
 [tool.uv]
 # This is an application, not a distributable package — do not build/install it.

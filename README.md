@@ -168,6 +168,19 @@ Import `postman/ProfPlan.postman_collection.json` (and the
 try every endpoint. Requests send a `Host: api.localhost` header so they reach
 the API through Traefik, and Postman keeps the auth cookies between calls.
 
+## Tests
+
+Unit tests run with pytest through Docker (no local Python required):
+
+```bash
+./scripts/test.sh            # run the whole suite
+./scripts/test.sh -q -k auth # filter by keyword
+```
+
+Auth has unit tests for `core/security` (Argon2id + JWT) and for `AuthService`
+(login, refresh rotation, reuse detection, logout, rate limiting) using
+in-memory fakes — no database or Redis needed.
+
 ## Contribution standards (Grupo Central)
 
 The entire project must be written in **English** (code, comments, commit
