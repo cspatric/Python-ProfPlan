@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     debug: bool = True
     api_prefix: str = "/api/v1"
 
+    # CORS — only used in development (production is same-origin via Traefik).
+    # Comma-separated list of allowed origins.
+    allowed_origins: str = "http://localhost:5173"
+
     # Database / cache
     database_url: str
     redis_url: str = "redis://redis:6379/0"
@@ -40,6 +44,16 @@ class Settings(BaseSettings):
     # Login rate limiting (Redis)
     login_rate_limit_max_attempts: int = 5
     login_rate_limit_window_seconds: int = 300
+
+    @property
+    def is_development(self) -> bool:
+        """True when running in the development environment."""
+        return self.app_env == "development"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Parsed list of allowed CORS origins."""
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
 
 @lru_cache

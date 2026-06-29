@@ -161,6 +161,22 @@ docker compose exec -e PYTHONPATH=/app api \
   python scripts/create_user.py user@example.com "Full Name" "Password@123"
 ```
 
+## CORS & single entrypoint
+
+The architecture treats **Traefik as the single entrypoint**, so CORS is a
+development-only concern:
+
+- **Development:** the React app (Vite, `http://localhost:5173`) and the API are
+  different origins, so a `CORSMiddleware` is enabled with the origins in
+  `ALLOWED_ORIGINS` and `allow_credentials=True` (never `*`, because auth uses
+  HttpOnly cookies).
+- **Production:** everything is served behind Traefik on a single domain
+  (`https://teacher-ai.com`, with `/api` routed to FastAPI). Same origin means
+  **no CORS at all** — the middleware is not added when `APP_ENV != development`.
+
+The browser sends the HttpOnly auth cookies automatically; there is no
+`Authorization: Bearer` header and no token in `localStorage`.
+
 ## Postman
 
 Import `postman/ProfPlan.postman_collection.json` (and the
