@@ -74,6 +74,110 @@ services:
     logging: *default-logging
 
   # -------------------------------------------------------------------------
+  # FastAPI application — only receives requests; heavy work goes to the worker.
+  # -------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    image: profplan-backend:latest
+    profiles: ["dev", "production"]
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.localhost`)"
+      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Celery worker — same image as the API, different command.
+  # -------------------------------------------------------------------------
+  worker:
+    image: profplan-backend:latest
+    profiles: ["dev", "production"]
+    restart: unless-stopped
+    command:
+      ["celery", "-A", "app.infrastructure.celery.worker:celery_app",
+       "worker", "--loglevel=info"]
+    env_file: .env
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test:
+        ["CMD", "celery", "-A", "app.infrastructure.celery.worker:celery_app",
+         "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Flower — Celery monitoring dashboard.
+  # -------------------------------------------------------------------------
+  flower:
+    image: profplan-backend:latest
+    profiles: ["dev", "production"]
+    restart: unless-stopped
+    command:
+      ["celery", "-A", "app.infrastructure.celery.worker:celery_app",
+       "flower", "--port=5555"]
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - frontend
+    ports:
+      - "5555:5555"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5555/healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
   # Ruff — lint / PEP 8, run on demand: `docker compose run --rm lint`
   # -------------------------------------------------------------------------
   lint:
