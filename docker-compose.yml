@@ -344,6 +344,33 @@ services:
       - .:/io
     command: ["check", "."]
 
+  # -------------------------------------------------------------------------
+  # Integration tests — pytest against a throwaway test DB and Redis db,
+  # on the backend network. Run with: `docker compose run --rm test`
+  # -------------------------------------------------------------------------
+  test:
+    image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+    profiles: ["tools"]
+    working_dir: /app
+    env_file: .env
+    environment:
+      UV_LINK_MODE: copy
+      # Isolated test database and Redis logical db — never touch dev data.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}_test
+      REDIS_URL: redis://redis:6379/15
+    volumes:
+      - .:/app
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      ["uv", "run", "--frozen", "--extra", "dev", "pytest", "-m",
+       "integration", "tests/integration", "-q"]
+
 networks:
   frontend:
     driver: bridge

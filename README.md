@@ -186,16 +186,29 @@ the API through Traefik, and Postman keeps the auth cookies between calls.
 
 ## Tests
 
-Unit tests run with pytest through Docker (no local Python required):
+Tests run with pytest through Docker (no local Python required).
+
+**Unit tests** (fast, no infrastructure — use in-memory fakes):
 
 ```bash
-./scripts/test.sh            # run the whole suite
+./scripts/test.sh            # all unit tests
 ./scripts/test.sh -q -k auth # filter by keyword
 ```
 
-Auth has unit tests for `core/security` (Argon2id + JWT) and for `AuthService`
-(login, refresh rotation, reuse detection, logout, rate limiting) using
-in-memory fakes — no database or Redis needed.
+`core/security` (Argon2id + JWT) and `AuthService` (login, refresh rotation,
+reuse detection, logout, rate limiting) are covered.
+
+**Integration tests** (real Postgres + Redis, throwaway `*_test` database and
+Redis db 15, on the stack network):
+
+```bash
+./scripts/test-integration.sh
+```
+
+These exercise the full HTTP flow with httpx: login/cookies, token rotation and
+reuse rejection, rate limiting (429) and the audit log persisted in Postgres.
+Live under `tests/integration/` and are marked `@pytest.mark.integration` (the
+unit run excludes them).
 
 ## Contribution standards (Grupo Central)
 
