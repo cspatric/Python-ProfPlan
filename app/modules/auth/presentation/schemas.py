@@ -1,0 +1,34 @@
+"""Request/response schemas for the auth endpoints."""
+
+import uuid
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, EmailStr
+
+from app.modules.users.domain.entities import UserStatus
+
+
+class LoginRequest(BaseModel):
+    """Credentials submitted to the login endpoint."""
+
+    email: EmailStr
+    password: str
+
+
+class UserResponse(BaseModel):
+    """Public representation of a user."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    uuid: uuid.UUID
+    name: str
+    email: EmailStr
+    profile_picture: str | None
+    status: UserStatus
+    last_login_at: datetime | None
+
+
+class MessageResponse(BaseModel):
+    """Generic message payload."""
+
+    detail: str
