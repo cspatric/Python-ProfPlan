@@ -197,9 +197,7 @@ class AuthService:
         session_id = uuid.uuid4()
         subject = str(user.uuid)
         access_token, access_exp = create_access_token(subject)
-        refresh_token, refresh_exp = create_refresh_token(
-            subject, str(session_id)
-        )
+        refresh_token, refresh_exp = create_refresh_token(subject, str(session_id))
         await self._refresh_tokens.create(
             session_id=session_id,
             user_id=user.uuid,

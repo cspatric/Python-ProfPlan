@@ -34,9 +34,7 @@ class UserRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create(
-        self, *, name: str, email: str, password_hash: str
-    ) -> User:
+    async def create(self, *, name: str, email: str, password_hash: str) -> User:
         """Persist a new user."""
         user = User(
             name=name,

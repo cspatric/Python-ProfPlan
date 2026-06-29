@@ -80,9 +80,7 @@ def create_access_token(subject: str) -> tuple[str, datetime]:
     return token, expires_at
 
 
-def create_refresh_token(
-    subject: str, session_id: str
-) -> tuple[str, datetime]:
+def create_refresh_token(subject: str, session_id: str) -> tuple[str, datetime]:
     """Create a long-lived refresh token bound to a session id."""
     token, _, expires_at = _create_token(
         subject=subject,

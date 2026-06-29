@@ -232,9 +232,7 @@ async def test_refresh_rotates_and_revokes_old_session() -> None:
     user = make_user()
     refresh = FakeRefreshTokenRepository()
     logs = FakeAuthLogRepository()
-    service = make_service(
-        users=FakeUserRepository([user]), refresh=refresh, logs=logs
-    )
+    service = make_service(users=FakeUserRepository([user]), refresh=refresh, logs=logs)
 
     first = await service.login(
         email=user.email, password=PASSWORD, ip_address=None, user_agent=None
@@ -255,9 +253,7 @@ async def test_refresh_reuse_revokes_all_sessions() -> None:
     user = make_user()
     refresh = FakeRefreshTokenRepository()
     logs = FakeAuthLogRepository()
-    service = make_service(
-        users=FakeUserRepository([user]), refresh=refresh, logs=logs
-    )
+    service = make_service(users=FakeUserRepository([user]), refresh=refresh, logs=logs)
 
     first = await service.login(
         email=user.email, password=PASSWORD, ip_address=None, user_agent=None
@@ -281,9 +277,7 @@ async def test_refresh_with_missing_or_garbage_token_fails() -> None:
     with pytest.raises(InvalidTokenError):
         await service.refresh(raw_token=None, ip_address=None, user_agent=None)
     with pytest.raises(InvalidTokenError):
-        await service.refresh(
-            raw_token="not.a.jwt", ip_address=None, user_agent=None
-        )
+        await service.refresh(raw_token="not.a.jwt", ip_address=None, user_agent=None)
 
 
 # --------------------------------------------------------------------------- #
@@ -293,9 +287,7 @@ async def test_logout_revokes_current_session() -> None:
     user = make_user()
     refresh = FakeRefreshTokenRepository()
     logs = FakeAuthLogRepository()
-    service = make_service(
-        users=FakeUserRepository([user]), refresh=refresh, logs=logs
-    )
+    service = make_service(users=FakeUserRepository([user]), refresh=refresh, logs=logs)
 
     tokens = await service.login(
         email=user.email, password=PASSWORD, ip_address=None, user_agent=None
@@ -314,9 +306,7 @@ async def test_logout_all_revokes_every_session() -> None:
     user = make_user()
     refresh = FakeRefreshTokenRepository()
     logs = FakeAuthLogRepository()
-    service = make_service(
-        users=FakeUserRepository([user]), refresh=refresh, logs=logs
-    )
+    service = make_service(users=FakeUserRepository([user]), refresh=refresh, logs=logs)
 
     await service.login(
         email=user.email, password=PASSWORD, ip_address=None, user_agent=None

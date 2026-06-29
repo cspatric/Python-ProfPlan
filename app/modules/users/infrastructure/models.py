@@ -30,9 +30,7 @@ class User(Base):
         nullable=False,
         default=UserStatus.ACTIVE,
     )
-    last_login_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
-    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

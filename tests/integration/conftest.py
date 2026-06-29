@@ -25,9 +25,7 @@ _TABLES = "users, providers, user_providers, refresh_tokens, auth_logs"
 async def _prepare_database() -> None:
     """Create the test database (if needed) and all tables."""
     prefix, db_name = _settings.database_url.rsplit("/", 1)
-    admin = create_async_engine(
-        f"{prefix}/postgres", isolation_level="AUTOCOMMIT"
-    )
+    admin = create_async_engine(f"{prefix}/postgres", isolation_level="AUTOCOMMIT")
     async with admin.connect() as conn:
         exists = await conn.scalar(
             text("SELECT 1 FROM pg_database WHERE datname = :name"),

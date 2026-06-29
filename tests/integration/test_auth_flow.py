@@ -37,17 +37,13 @@ async def test_me_without_login_is_unauthorized(client):
 async def test_login_with_wrong_password_is_unauthorized(client, user_factory):
     await user_factory(email="b@test.com")
 
-    resp = await client.post(
-        LOGIN, json={"email": "b@test.com", "password": "wrong"}
-    )
+    resp = await client.post(LOGIN, json={"email": "b@test.com", "password": "wrong"})
     assert resp.status_code == 401
 
 
 async def test_refresh_rotates_and_old_token_is_rejected(client, user_factory):
     await user_factory(email="c@test.com")
-    await client.post(
-        LOGIN, json={"email": "c@test.com", "password": "Senha@123"}
-    )
+    await client.post(LOGIN, json={"email": "c@test.com", "password": "Senha@123"})
     old_refresh = client.cookies.get("refresh_token")
 
     rotated = await client.post(REFRESH)
@@ -78,9 +74,7 @@ async def test_login_is_rate_limited_after_max_attempts(client, user_factory):
 
 async def test_logout_revokes_session(client, user_factory):
     await user_factory(email="e@test.com")
-    await client.post(
-        LOGIN, json={"email": "e@test.com", "password": "Senha@123"}
-    )
+    await client.post(LOGIN, json={"email": "e@test.com", "password": "Senha@123"})
 
     out = await client.post(LOGOUT)
     assert out.status_code == 200
@@ -92,9 +86,7 @@ async def test_logout_revokes_session(client, user_factory):
 
 async def test_login_writes_audit_log(client, user_factory):
     await user_factory(email="f@test.com")
-    await client.post(
-        LOGIN, json={"email": "f@test.com", "password": "Senha@123"}
-    )
+    await client.post(LOGIN, json={"email": "f@test.com", "password": "Senha@123"})
 
     async with SessionFactory() as session:
         count = await session.scalar(

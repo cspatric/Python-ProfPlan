@@ -56,9 +56,7 @@ def _set_auth_cookies(response: Response, tokens: IssuedTokens) -> None:
 
 def _clear_auth_cookies(response: Response) -> None:
     for name in (_settings.access_cookie_name, _settings.refresh_cookie_name):
-        response.delete_cookie(
-            key=name, domain=_settings.cookie_domain, path="/"
-        )
+        response.delete_cookie(key=name, domain=_settings.cookie_domain, path="/")
 
 
 @router.post("/login", response_model=UserResponse)
