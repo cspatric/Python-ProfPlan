@@ -1,10 +1,13 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.12-slim AS base
+# Single image shared by the API and the Celery worker — only the command differs.
+FROM python:3.13-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 
@@ -13,9 +16,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Python dependencies
-COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install -e .
+# uv (fast dependency manager)
+COPY --from=ghcr.io/astral-sh/uv:0.5.29 /uv /uvx /bin/
+
+# Resolve dependencies from the lockfile (cached layer)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
 # Application code
 COPY app ./app
