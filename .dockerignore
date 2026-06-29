@@ -12,6 +12,5 @@ __pycache__
 !.env.example
 docker
 docs
-scripts
 tests
 *.md

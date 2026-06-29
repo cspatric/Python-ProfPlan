@@ -23,9 +23,11 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.29 /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-# Application code
+# Application code and migrations
 COPY app ./app
 COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
+COPY scripts ./scripts
 
 EXPOSE 8000
 
