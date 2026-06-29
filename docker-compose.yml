@@ -178,6 +178,79 @@ services:
     logging: *default-logging
 
   # -------------------------------------------------------------------------
+  # MinIO — S3-compatible object storage for documents. Official image.
+  # -------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    profiles: ["dev", "production"]
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - backend
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Traefik — edge router. Only this and the frontend touch the internet.
+  # -------------------------------------------------------------------------
+  traefik:
+    image: traefik:v3.3
+    profiles: ["dev", "production"]
+    restart: unless-stopped
+    command: --configFile=/etc/traefik/traefik.yml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./docker/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./docker/traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
+    networks:
+      - frontend
+    ports:
+      - "80:80"
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Adminer — lightweight DB UI, development only.
+  # -------------------------------------------------------------------------
+  adminer:
+    image: adminer:latest
+    profiles: ["dev"]
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    ports:
+      - "8081:8080"
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
   # Ruff — lint / PEP 8, run on demand: `docker compose run --rm lint`
   # -------------------------------------------------------------------------
   lint:

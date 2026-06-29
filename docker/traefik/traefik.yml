@@ -3,6 +3,8 @@ api:
   dashboard: true
   insecure: true
 
+ping: {}
+
 entryPoints:
   web:
     address: ":80"
@@ -12,6 +14,7 @@ entryPoints:
 providers:
   docker:
     exposedByDefault: false
+    network: frontend
   file:
     directory: /etc/traefik/dynamic
     watch: true
