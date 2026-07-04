@@ -820,6 +820,19 @@
           "response": []
         },
         {
+          "name": "Get Document Status",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/documents/{{document_id}}/status",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["documents", "{{document_id}}", "status"]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Delete Document",
           "request": {
             "method": "DELETE",
@@ -828,6 +841,32 @@
               "raw": "{{baseUrl}}{{apiPrefix}}/documents/{{document_id}}",
               "host": ["{{baseUrl}}{{apiPrefix}}"],
               "path": ["documents", "{{document_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "RAG",
+      "description": "Retrieval over the user's indexed document chunks.",
+      "item": [
+        {
+          "name": "Query",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"how does photosynthesis work?\",\n  \"subject_id\": \"{{subject_id}}\",\n  \"limit\": 5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/rag/query",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["rag", "query"]
             }
           },
           "response": []

@@ -174,7 +174,8 @@ authenticated user and every query is scoped to that user.
 | Academic items | `/api/v1/academic-items` | Full CRUD; `module_id` must belong to the user; list filtered by `module_id`; **soft delete** |
 | Academic item categories | `/api/v1/academic-item-categories` | Global catalog, full CRUD |
 | Academic item category types | `/api/v1/academic-item-category-types` | Global catalog, full CRUD; `academic_item_category_id` must exist; list filterable by `category_id` |
-| Documents | `/api/v1/documents` | Multipart **upload** (202) → stored in MinIO + queued for async ingestion; list (`?subject_id`), get, soft delete |
+| Documents | `/api/v1/documents` | Multipart **upload** (202) → stored in MinIO + queued for async ingestion; list (`?subject_id`), get, `GET /{id}/status` (pending/processed), soft delete |
+| RAG query | `/api/v1/rag/query` | Embed a question and retrieve the most relevant chunks (cosine), scoped to the user's documents |
 
 ### Document ingestion (RAG)
 
