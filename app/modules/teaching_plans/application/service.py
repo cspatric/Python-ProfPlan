@@ -27,9 +27,7 @@ class PlanService:
         self._repo = repository
         self._subjects = subjects
 
-    async def _ensure_subject_owned(
-        self, subject_id: UUID, user_id: UUID
-    ) -> None:
+    async def _ensure_subject_owned(self, subject_id: UUID, user_id: UUID) -> None:
         if await self._subjects.get_by_id(subject_id, user_id) is None:
             raise InvalidSubjectError
 
@@ -42,9 +40,7 @@ class PlanService:
         await self._session.refresh(plan)
         return plan
 
-    async def list(
-        self, *, user_id: UUID, limit: int, offset: int
-    ) -> list[Plan]:
+    async def list(self, *, user_id: UUID, limit: int, offset: int) -> list[Plan]:
         """List the user's plans."""
         return await self._repo.list_by_user(user_id, limit=limit, offset=offset)
 

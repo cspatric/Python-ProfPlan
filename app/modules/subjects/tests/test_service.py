@@ -28,9 +28,7 @@ class FakeSubjectRepository:
         subject.created_at = subject.updated_at = datetime.now(UTC)
         self.items[subject.uuid] = subject
 
-    async def get_by_id(
-        self, subject_id: UUID, user_id: UUID
-    ) -> Subject | None:
+    async def get_by_id(self, subject_id: UUID, user_id: UUID) -> Subject | None:
         subject = self.items.get(subject_id)
         if subject is None or subject.user_id != user_id:
             return None
@@ -87,9 +85,7 @@ async def test_update_changes_fields() -> None:
 async def test_update_missing_raises() -> None:
     service, _ = make_service()
     with pytest.raises(SubjectNotFoundError):
-        await service.update(
-            user_id=uuid4(), subject_id=uuid4(), data={"name": "x"}
-        )
+        await service.update(user_id=uuid4(), subject_id=uuid4(), data={"name": "x"})
 
 
 async def test_delete_removes_subject() -> None:

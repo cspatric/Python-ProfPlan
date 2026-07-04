@@ -25,9 +25,7 @@ class SubjectService:
         await self._session.refresh(subject)
         return subject
 
-    async def list(
-        self, *, user_id: UUID, limit: int, offset: int
-    ) -> list[Subject]:
+    async def list(self, *, user_id: UUID, limit: int, offset: int) -> list[Subject]:
         """List the user's subjects."""
         return await self._repo.list_by_user(user_id, limit=limit, offset=offset)
 

@@ -18,9 +18,7 @@ class SubjectRepository:
         """Stage a new subject for insertion."""
         self._session.add(subject)
 
-    async def get_by_id(
-        self, subject_id: UUID, user_id: UUID
-    ) -> Subject | None:
+    async def get_by_id(self, subject_id: UUID, user_id: UUID) -> Subject | None:
         """Return a subject by id, scoped to its owner."""
         stmt = select(Subject).where(
             Subject.uuid == subject_id,
