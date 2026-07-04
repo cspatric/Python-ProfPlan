@@ -121,9 +121,7 @@ async def auth_client(client, user_factory):
 @pytest_asyncio.fixture
 async def subject_id(auth_client) -> str:
     """Create a subject and return its id."""
-    resp = await auth_client.post(
-        "/api/v1/subjects", json={"name": "Mathematics"}
-    )
+    resp = await auth_client.post("/api/v1/subjects", json={"name": "Mathematics"})
     return resp.json()["uuid"]
 
 
