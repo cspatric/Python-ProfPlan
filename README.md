@@ -48,6 +48,15 @@ Two networks: `frontend` (edge, Traefik ↔ API) and `backend` (internal —
 PostgreSQL is never exposed to the host). Named volumes persist Postgres, Redis,
 MinIO and Grafana data.
 
+### Tracing (OpenTelemetry)
+
+Distributed tracing is opt-in (`OTEL_ENABLED=true`) and needs the
+`observability` profile (otel-collector + **tempo**). The API and Celery worker
+auto-instrument FastAPI, SQLAlchemy, Redis, httpx and Celery, exporting spans to
+the collector → Tempo → Grafana (Tempo datasource is pre-provisioned). Context
+propagates across the Redis broker, so a document upload and its background
+ingestion (parse → embed → index) appear in a **single trace**.
+
 > This repository is **backend-only**. The React frontend lives in a separate
 > repository and is intentionally not part of this stack.
 
