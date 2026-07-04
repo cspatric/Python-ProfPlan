@@ -16,6 +16,9 @@ from app.modules.auth.infrastructure import models as auth_models  # noqa: F401
 from app.modules.subjects.infrastructure import (  # noqa: F401
     models as subject_models,
 )
+from app.modules.teaching_plans.infrastructure import (  # noqa: F401
+    models as plan_models,
+)
 from app.modules.users.infrastructure import models as user_models  # noqa: F401
 
 config = context.config
