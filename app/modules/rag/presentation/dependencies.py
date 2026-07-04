@@ -11,9 +11,7 @@ from app.modules.documents.infrastructure.repository import (
 )
 from app.modules.rag.application.retrieval_service import RetrievalService
 from app.modules.rag.application.search_service import SearchService
-from app.modules.rag.infrastructure.embedding.ollama_embedding import (
-    OllamaEmbedding,
-)
+from app.modules.rag.infrastructure.embedding.cache import build_cached_embedder
 from app.modules.rag.infrastructure.repository import ChunkRepository
 
 
@@ -22,7 +20,7 @@ def get_retrieval_service(
 ) -> RetrievalService:
     """Build a RetrievalService wired to the request-scoped session."""
     return RetrievalService(
-        OllamaEmbedding(),
+        build_cached_embedder(),
         SearchService(ChunkRepository(session)),
         DocumentContentRepository(session),
     )

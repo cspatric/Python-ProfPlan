@@ -12,9 +12,7 @@ from app.modules.documents.infrastructure.repository import (
 )
 from app.modules.rag.application.indexing_service import IndexingService
 from app.modules.rag.application.ingestion_service import IngestionService
-from app.modules.rag.infrastructure.embedding.ollama_embedding import (
-    OllamaEmbedding,
-)
+from app.modules.rag.infrastructure.embedding.cache import build_cached_embedder
 from app.modules.rag.infrastructure.repository import ChunkRepository
 
 
@@ -26,7 +24,7 @@ async def _run(document_id: UUID) -> None:
         service = IngestionService(
             session,
             storage=get_object_storage(),
-            embedder=OllamaEmbedding(),
+            embedder=build_cached_embedder(),
             documents=DocumentRepository(session),
             contents=DocumentContentRepository(session),
             indexing=indexing,

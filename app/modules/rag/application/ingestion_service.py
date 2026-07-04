@@ -13,10 +13,8 @@ from app.modules.documents.infrastructure.repository import (
 )
 from app.modules.rag.application.indexing_service import IndexingService
 from app.modules.rag.domain.chunk import ChunkInput
+from app.modules.rag.domain.interfaces import Embedder
 from app.modules.rag.infrastructure.chunking.chunker import chunk_markdown
-from app.modules.rag.infrastructure.embedding.ollama_embedding import (
-    OllamaEmbedding,
-)
 from app.modules.rag.infrastructure.parser.document_parser import (
     parse_to_markdown,
 )
@@ -30,7 +28,7 @@ class IngestionService:
         session: AsyncSession,
         *,
         storage: ObjectStorage,
-        embedder: OllamaEmbedding,
+        embedder: Embedder,
         documents: DocumentRepository,
         contents: DocumentContentRepository,
         indexing: IndexingService,

@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     # Embeddings (Ollama)
     ollama_base_url: str = "http://ollama:11434"
     embedding_model: str = "bge-m3"
+    # Cache embeddings in Redis to avoid re-embedding identical text (7 days).
+    embedding_cache_ttl_seconds: int = 604800
 
     # Celery
     celery_broker_url: str = "redis://redis:6379/1"

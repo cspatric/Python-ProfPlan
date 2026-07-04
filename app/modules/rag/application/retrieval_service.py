@@ -7,9 +7,7 @@ from app.modules.documents.infrastructure.repository import (
 )
 from app.modules.rag.application.search_service import SearchService
 from app.modules.rag.domain.chunk import SearchResult
-from app.modules.rag.infrastructure.embedding.ollama_embedding import (
-    OllamaEmbedding,
-)
+from app.modules.rag.domain.interfaces import Embedder
 
 
 class RetrievalService:
@@ -17,7 +15,7 @@ class RetrievalService:
 
     def __init__(
         self,
-        embedder: OllamaEmbedding,
+        embedder: Embedder,
         search: SearchService,
         contents: DocumentContentRepository,
     ) -> None:
