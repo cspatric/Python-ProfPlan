@@ -74,6 +74,31 @@ services:
     logging: *default-logging
 
   # -------------------------------------------------------------------------
+  # Ollama — local embedding model server (bge-m3). Pull the model once with:
+  #   docker compose exec ollama ollama pull bge-m3
+  # -------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["dev", "production"]
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4g
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
   # FastAPI application — only receives requests; heavy work goes to the worker.
   # -------------------------------------------------------------------------
   api:
@@ -382,3 +407,4 @@ volumes:
   redis_data:
   minio_data:
   grafana_data:
+  ollama_data:

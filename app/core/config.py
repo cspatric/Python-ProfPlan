@@ -45,6 +45,21 @@ class Settings(BaseSettings):
     login_rate_limit_max_attempts: int = 5
     login_rate_limit_window_seconds: int = 300
 
+    # Object storage (MinIO)
+    minio_endpoint: str = "minio:9000"
+    minio_root_user: str = "minioadmin"
+    minio_root_password: str = "minioadmin"
+    minio_bucket: str = "profplan"
+    minio_secure: bool = False
+
+    # Embeddings (Ollama)
+    ollama_base_url: str = "http://ollama:11434"
+    embedding_model: str = "bge-m3"
+
+    # Celery
+    celery_broker_url: str = "redis://redis:6379/1"
+    celery_result_backend: str = "redis://redis:6379/2"
+
     @property
     def is_development(self) -> bool:
         """True when running in the development environment."""
