@@ -22,7 +22,7 @@ _NOT_FOUND = HTTPException(
     status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found"
 )
 _INVALID_SUBJECT = HTTPException(
-    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
     detail="Subject not found or not owned by the user",
 )
 
