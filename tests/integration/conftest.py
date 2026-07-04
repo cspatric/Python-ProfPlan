@@ -21,9 +21,13 @@ from app.modules.academic_items.infrastructure import (  # noqa: F401
     models as _academic_item_models,
 )
 from app.modules.auth.infrastructure import models as _auth_models  # noqa: F401
+from app.modules.documents.infrastructure import (  # noqa: F401
+    models as _document_models,
+)
 from app.modules.plan_modules.infrastructure import (  # noqa: F401
     models as _module_models,
 )
+from app.modules.rag.infrastructure import models as _rag_models  # noqa: F401
 from app.modules.subjects.infrastructure import (  # noqa: F401
     models as _subject_models,
 )
@@ -37,7 +41,8 @@ _settings = get_settings()
 _TABLES = (
     "users, providers, user_providers, refresh_tokens, auth_logs, "
     "subjects, plans, modules, academic_items, "
-    "academic_item_category, academic_item_category_types"
+    "academic_item_category, academic_item_category_types, "
+    "document_format, document, document_content, chunks"
 )
 
 
@@ -56,6 +61,8 @@ async def _prepare_database() -> None:
 
     setup_engine = create_async_engine(_settings.database_url)
     async with setup_engine.begin() as conn:
+        # pgvector must exist before creating the chunks table.
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
     await setup_engine.dispose()
 
