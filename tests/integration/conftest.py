@@ -63,6 +63,8 @@ async def _prepare_database() -> None:
     async with setup_engine.begin() as conn:
         # pgvector must exist before creating the chunks table.
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        # Recreate from the current models so the schema always matches.
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     await setup_engine.dispose()
 

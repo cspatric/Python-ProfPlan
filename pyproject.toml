@@ -20,6 +20,7 @@ dependencies = [
     "celery[redis]>=5.4",
     "flower>=2.0",
     "minio>=7.2",
+    "pypdf>=5.1",
     "httpx>=0.28",
     "python-multipart>=0.0.20",
     "prometheus-client>=0.21",

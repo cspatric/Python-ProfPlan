@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.documents.infrastructure.models import (
     Document,
     DocumentContent,
+    DocumentFormat,
 )
 from app.modules.subjects.infrastructure.models import Subject
 
@@ -54,6 +55,36 @@ class DocumentRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_for_processing(self, document_id: UUID) -> Document | None:
+        """Return a document by id without user scoping (worker use)."""
+        result = await self._session.execute(
+            select(Document).where(
+                Document.uuid == document_id,
+                Document.deleted_at.is_(None),
+            )
+        )
+        return result.scalar_one_or_none()
+
+
+class DocumentFormatRepository:
+    """Data-access layer for the document_format catalog."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_or_create(self, fmt: str) -> DocumentFormat:
+        """Return the format row for ``fmt``, creating it if needed."""
+        result = await self._session.execute(
+            select(DocumentFormat).where(DocumentFormat.format == fmt)
+        )
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            return existing
+        document_format = DocumentFormat(format=fmt)
+        self._session.add(document_format)
+        await self._session.flush()
+        return document_format
 
 
 class DocumentContentRepository:

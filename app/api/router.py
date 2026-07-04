@@ -10,6 +10,9 @@ from app.modules.academic_items.presentation.router import (
     router as academic_items_router,
 )
 from app.modules.auth.presentation.router import router as auth_router
+from app.modules.documents.presentation.router import (
+    router as documents_router,
+)
 from app.modules.plan_modules.presentation.router import router as modules_router
 from app.modules.subjects.presentation.router import router as subjects_router
 from app.modules.teaching_plans.presentation.router import router as plans_router
@@ -22,3 +25,4 @@ api_router.include_router(modules_router)
 api_router.include_router(academic_items_router)
 api_router.include_router(categories_router)
 api_router.include_router(types_router)
+api_router.include_router(documents_router)
