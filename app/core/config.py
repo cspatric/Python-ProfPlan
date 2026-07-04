@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://redis:6379/1"
     celery_result_backend: str = "redis://redis:6379/2"
 
+    # Tracing (OpenTelemetry). Opt-in; export goes to the OTel Collector.
+    otel_enabled: bool = False
+    otel_exporter_otlp_endpoint: str = "http://otel-collector:4317"
+
     @property
     def is_development(self) -> bool:
         """True when running in the development environment."""

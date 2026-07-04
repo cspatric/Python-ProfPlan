@@ -294,6 +294,21 @@ services:
     logging: *default-logging
 
   # -------------------------------------------------------------------------
+  # Tempo — distributed trace backend (queried by Grafana).
+  # -------------------------------------------------------------------------
+  tempo:
+    image: grafana/tempo:latest
+    profiles: ["observability"]
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    volumes:
+      - ./docker/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo_data:/var/tempo
+    networks:
+      - backend
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
   # OpenTelemetry Collector — receives traces/metrics/logs from the app.
   # -------------------------------------------------------------------------
   otel-collector:
@@ -408,3 +423,4 @@ volumes:
   minio_data:
   grafana_data:
   ollama_data:
+  tempo_data:

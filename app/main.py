@@ -2,15 +2,22 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from app.api.exceptions import register_exception_handlers
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.infrastructure.telemetry.traces import setup_tracing
 
 settings = get_settings()
 
 app = FastAPI(title="ProfPlan API")
 register_exception_handlers(app)
+
+# Distributed tracing (opt-in via OTEL_ENABLED).
+if settings.otel_enabled:
+    setup_tracing("profplan-api")
+    FastAPIInstrumentor.instrument_app(app)
 
 # CORS is only needed in development, where the React app (e.g. Vite on
 # http://localhost:5173) and the API live on different origins. In production
