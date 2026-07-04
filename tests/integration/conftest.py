@@ -14,12 +14,31 @@ from app.core.security import hash_password
 from app.infrastructure.database.base import Base
 from app.infrastructure.database.session import SessionFactory, engine
 from app.infrastructure.redis.client import redis_client
+from app.modules.academic_item_categories.infrastructure import (  # noqa: F401
+    models as _category_models,
+)
+from app.modules.academic_items.infrastructure import (  # noqa: F401
+    models as _academic_item_models,
+)
 from app.modules.auth.infrastructure import models as _auth_models  # noqa: F401
+from app.modules.plan_modules.infrastructure import (  # noqa: F401
+    models as _module_models,
+)
+from app.modules.subjects.infrastructure import (  # noqa: F401
+    models as _subject_models,
+)
+from app.modules.teaching_plans.infrastructure import (  # noqa: F401
+    models as _plan_models,
+)
 from app.modules.users.infrastructure import models as _user_models  # noqa: F401
 from app.modules.users.infrastructure.repository import UserRepository
 
 _settings = get_settings()
-_TABLES = "users, providers, user_providers, refresh_tokens, auth_logs"
+_TABLES = (
+    "users, providers, user_providers, refresh_tokens, auth_logs, "
+    "subjects, plans, modules, academic_items, "
+    "academic_item_category, academic_item_category_types"
+)
 
 
 async def _prepare_database() -> None:
@@ -86,3 +105,63 @@ async def user_factory():
             return user
 
     return _create
+
+
+@pytest_asyncio.fixture
+async def auth_client(client, user_factory):
+    """An HTTP client already authenticated as a fresh user."""
+    await user_factory(email="domain@test.com")
+    await client.post(
+        "/api/v1/auth/login",
+        json={"email": "domain@test.com", "password": "Senha@123"},
+    )
+    return client
+
+
+@pytest_asyncio.fixture
+async def subject_id(auth_client) -> str:
+    """Create a subject and return its id."""
+    resp = await auth_client.post(
+        "/api/v1/subjects", json={"name": "Mathematics"}
+    )
+    return resp.json()["uuid"]
+
+
+@pytest_asyncio.fixture
+async def plan_id(auth_client, subject_id) -> str:
+    """Create a plan and return its id."""
+    resp = await auth_client.post(
+        "/api/v1/plans",
+        json={
+            "subject_id": subject_id,
+            "starts_at": "2026-08-01",
+            "ends_at": "2026-12-15",
+            "class_duration": 50,
+            "class_per_week": 2,
+        },
+    )
+    return resp.json()["uuid"]
+
+
+@pytest_asyncio.fixture
+async def module_id(auth_client, plan_id) -> str:
+    """Create a module and return its id."""
+    resp = await auth_client.post(
+        "/api/v1/modules",
+        json={
+            "plan_id": plan_id,
+            "title": "Module 1",
+            "start_at": "2026-08-01",
+            "ends_at": "2026-09-01",
+        },
+    )
+    return resp.json()["uuid"]
+
+
+@pytest_asyncio.fixture
+async def category_id(auth_client) -> str:
+    """Create an academic item category and return its id."""
+    resp = await auth_client.post(
+        "/api/v1/academic-item-categories", json={"name": "Evaluations"}
+    )
+    return resp.json()["uuid"]
