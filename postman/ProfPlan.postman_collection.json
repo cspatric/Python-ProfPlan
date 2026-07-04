@@ -36,7 +36,8 @@
     { "key": "module_id", "value": "", "type": "string" },
     { "key": "academic_item_id", "value": "", "type": "string" },
     { "key": "category_id", "value": "", "type": "string" },
-    { "key": "category_type_id", "value": "", "type": "string" }
+    { "key": "category_type_id", "value": "", "type": "string" },
+    { "key": "document_id", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -747,6 +748,86 @@
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-category-types/{{category_type_id}}",
               "host": ["{{baseUrl}}{{apiPrefix}}"],
               "path": ["academic-item-category-types", "{{category_type_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "description": "Upload triggers async ingestion (parse -> chunk -> embed -> index).",
+      "item": [
+        {
+          "name": "Upload Document",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 202) {",
+                  "  pm.collectionVariables.set('document_id', pm.response.json().uuid);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "subject_id", "value": "{{subject_id}}", "type": "text" },
+                { "key": "title", "value": "My document", "type": "text" },
+                { "key": "file", "type": "file", "src": [] }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/documents",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["documents"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Documents (by subject)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/documents?subject_id={{subject_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["documents"],
+              "query": [{ "key": "subject_id", "value": "{{subject_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Document",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/documents/{{document_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["documents", "{{document_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Document",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/documents/{{document_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["documents", "{{document_id}}"]
             }
           },
           "response": []

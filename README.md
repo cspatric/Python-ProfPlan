@@ -174,6 +174,20 @@ authenticated user and every query is scoped to that user.
 | Academic items | `/api/v1/academic-items` | Full CRUD; `module_id` must belong to the user; list filtered by `module_id`; **soft delete** |
 | Academic item categories | `/api/v1/academic-item-categories` | Global catalog, full CRUD |
 | Academic item category types | `/api/v1/academic-item-category-types` | Global catalog, full CRUD; `academic_item_category_id` must exist; list filterable by `category_id` |
+| Documents | `/api/v1/documents` | Multipart **upload** (202) → stored in MinIO + queued for async ingestion; list (`?subject_id`), get, soft delete |
+
+### Document ingestion (RAG)
+
+Uploading a document (`POST /api/v1/documents`, multipart: `file`, `subject_id`,
+`title`) stores it in MinIO and enqueues a Celery task. The worker then parses
+it to markdown (txt/md/pdf), chunks it, generates embeddings with **bge-m3**
+(Ollama, 1024-dim) and indexes the chunks in pgvector for cosine search.
+
+Pull the embedding model once after starting the stack:
+
+```bash
+docker compose exec ollama ollama pull bge-m3
+```
 
 Each resource supports `POST` (create), `GET` (list, with `limit`/`offset`),
 `GET /{id}`, `PATCH /{id}` and `DELETE /{id}`.
