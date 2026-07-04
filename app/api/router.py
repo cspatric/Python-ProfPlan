@@ -14,6 +14,7 @@ from app.modules.documents.presentation.router import (
     router as documents_router,
 )
 from app.modules.plan_modules.presentation.router import router as modules_router
+from app.modules.rag.presentation.router import router as rag_router
 from app.modules.subjects.presentation.router import router as subjects_router
 from app.modules.teaching_plans.presentation.router import router as plans_router
 
@@ -26,3 +27,4 @@ api_router.include_router(academic_items_router)
 api_router.include_router(categories_router)
 api_router.include_router(types_router)
 api_router.include_router(documents_router)
+api_router.include_router(rag_router)

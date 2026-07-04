@@ -18,3 +18,10 @@ class DocumentResponse(BaseModel):
     document_path: str
     created_at: datetime
     updated_at: datetime
+
+
+class DocumentStatusResponse(BaseModel):
+    """Ingestion status of a document."""
+
+    document_id: UUID
+    status: str

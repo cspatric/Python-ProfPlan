@@ -124,3 +124,33 @@ class DocumentContentRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def list_content_ids_for_user(
+        self, user_id: UUID, subject_id: UUID | None = None
+    ) -> list[UUID]:
+        """Return the content ids the user is allowed to search over.
+
+        Scoped to the user's non-deleted documents, optionally to one subject.
+        """
+        stmt = (
+            select(DocumentContent.uuid)
+            .join(Document, DocumentContent.document_id == Document.uuid)
+            .join(Subject, Document.subject_id == Subject.uuid)
+            .where(
+                Subject.user_id == user_id,
+                Document.deleted_at.is_(None),
+            )
+        )
+        if subject_id is not None:
+            stmt = stmt.where(Document.subject_id == subject_id)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def has_content(self, document_id: UUID) -> bool:
+        """Return True if the document has at least one parsed content."""
+        result = await self._session.execute(
+            select(DocumentContent.uuid)
+            .where(DocumentContent.document_id == document_id)
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None

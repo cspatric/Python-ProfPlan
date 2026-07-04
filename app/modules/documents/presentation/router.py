@@ -8,10 +8,14 @@ from fastapi import APIRouter, File, Form, Query, UploadFile, status
 from app.infrastructure.celery.tasks.ingest import ingest_document
 from app.modules.auth.presentation.dependencies import CurrentUser
 from app.modules.documents.presentation.dependencies import (
+    ContentServiceDep,
     DocumentServiceDep,
     UploadServiceDep,
 )
-from app.modules.documents.presentation.schemas import DocumentResponse
+from app.modules.documents.presentation.schemas import (
+    DocumentResponse,
+    DocumentStatusResponse,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -60,6 +64,15 @@ async def get_document(
     """Return a single document."""
     document = await service.get(user_id=user.uuid, document_id=document_id)
     return DocumentResponse.model_validate(document)
+
+
+@router.get("/{document_id}/status", response_model=DocumentStatusResponse)
+async def get_document_status(
+    document_id: UUID, user: CurrentUser, service: ContentServiceDep
+) -> DocumentStatusResponse:
+    """Return whether the document has finished ingestion."""
+    state = await service.get_status(user_id=user.uuid, document_id=document_id)
+    return DocumentStatusResponse(document_id=document_id, status=state)
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
