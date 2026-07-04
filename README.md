@@ -172,6 +172,8 @@ authenticated user and every query is scoped to that user.
 | Plans | `/api/v1/plans` | Full CRUD; `subject_id` must belong to the user |
 | Modules | `/api/v1/modules` | Full CRUD; `plan_id` must belong to the user; list is filtered by `plan_id` |
 | Academic items | `/api/v1/academic-items` | Full CRUD; `module_id` must belong to the user; list filtered by `module_id`; **soft delete** |
+| Academic item categories | `/api/v1/academic-item-categories` | Global catalog, full CRUD |
+| Academic item category types | `/api/v1/academic-item-category-types` | Global catalog, full CRUD; `academic_item_category_id` must exist; list filterable by `category_id` |
 
 Each resource supports `POST` (create), `GET` (list, with `limit`/`offset`),
 `GET /{id}`, `PATCH /{id}` and `DELETE /{id}`.
