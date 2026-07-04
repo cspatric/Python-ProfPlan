@@ -161,6 +161,20 @@ docker compose exec -e PYTHONPATH=/app api \
   python scripts/create_user.py user@example.com "Full Name" "Password@123"
 ```
 
+## Domain resources
+
+All resource routes require the auth cookie; `user_id` comes from the
+authenticated user and every query is scoped to that user.
+
+| Resource | Base path | Notes |
+|----------|-----------|-------|
+| Subjects | `/api/v1/subjects` | Full CRUD |
+| Plans | `/api/v1/plans` | Full CRUD; `subject_id` must belong to the user |
+| Modules | `/api/v1/modules` | Full CRUD; `plan_id` must belong to the user; list is filtered by `plan_id` |
+
+Each resource supports `POST` (create), `GET` (list, with `limit`/`offset`),
+`GET /{id}`, `PATCH /{id}` and `DELETE /{id}`.
+
 ## CORS & single entrypoint
 
 The architecture treats **Traefik as the single entrypoint**, so CORS is a

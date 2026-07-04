@@ -30,7 +30,10 @@
       "key": "password",
       "value": "Senha@123",
       "type": "string"
-    }
+    },
+    { "key": "subject_id", "value": "", "type": "string" },
+    { "key": "plan_id", "value": "", "type": "string" },
+    { "key": "module_id", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -139,6 +142,313 @@
         }
       ],
       "description": "Cookie-based JWT authentication endpoints."
+    },
+    {
+      "name": "Subjects",
+      "description": "CRUD for subjects (requires login first).",
+      "item": [
+        {
+          "name": "Create Subject",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('subject_id', pm.response.json().uuid);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Mathematics\",\n  \"knowledge_area\": \"STEM\",\n  \"description\": \"Algebra and geometry\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/subjects",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["subjects"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Subjects",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/subjects?limit=50&offset=0",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["subjects"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Subject",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/subjects/{{subject_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["subjects", "{{subject_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Subject",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Mathematics II\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/subjects/{{subject_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["subjects", "{{subject_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Subject",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/subjects/{{subject_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["subjects", "{{subject_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Plans",
+      "description": "CRUD for teaching plans (needs a subject_id).",
+      "item": [
+        {
+          "name": "Create Plan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('plan_id', pm.response.json().uuid);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject_id\": \"{{subject_id}}\",\n  \"starts_at\": \"2026-08-01\",\n  \"ends_at\": \"2026-12-15\",\n  \"class_duration\": 50,\n  \"class_per_week\": 2,\n  \"total_weight\": 100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/plans",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["plans"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Plans",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/plans?limit=50&offset=0",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["plans"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Plan",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/plans/{{plan_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["plans", "{{plan_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Plan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"class_per_week\": 3\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/plans/{{plan_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["plans", "{{plan_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Plan",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/plans/{{plan_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["plans", "{{plan_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Modules",
+      "description": "CRUD for plan modules (needs a plan_id).",
+      "item": [
+        {
+          "name": "Create Module",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('module_id', pm.response.json().uuid);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan_id\": \"{{plan_id}}\",\n  \"title\": \"Introduction\",\n  \"description\": \"Module 1\",\n  \"start_at\": \"2026-08-01\",\n  \"ends_at\": \"2026-09-01\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/modules",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["modules"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Modules (by plan)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/modules?plan_id={{plan_id}}&limit=50&offset=0",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["modules"],
+              "query": [
+                { "key": "plan_id", "value": "{{plan_id}}" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Module",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/modules/{{module_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["modules", "{{module_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Module",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"General Introduction\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/modules/{{module_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["modules", "{{module_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Module",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/modules/{{module_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["modules", "{{module_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }
