@@ -2,6 +2,10 @@
 
 from fastapi import APIRouter
 
+from app.modules.academic_item_categories.presentation.router import (
+    categories_router,
+    types_router,
+)
 from app.modules.academic_items.presentation.router import (
     router as academic_items_router,
 )
@@ -16,3 +20,5 @@ api_router.include_router(subjects_router)
 api_router.include_router(plans_router)
 api_router.include_router(modules_router)
 api_router.include_router(academic_items_router)
+api_router.include_router(categories_router)
+api_router.include_router(types_router)

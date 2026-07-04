@@ -12,6 +12,9 @@ from app.infrastructure.database.base import Base
 
 # Import every model module so that Base.metadata is fully populated for
 # autogenerate. New modules with tables must be imported here.
+from app.modules.academic_item_categories.infrastructure import (  # noqa: F401
+    models as academic_item_category_models,
+)
 from app.modules.academic_items.infrastructure import (  # noqa: F401
     models as academic_item_models,
 )
