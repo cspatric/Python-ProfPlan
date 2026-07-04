@@ -34,7 +34,9 @@
     { "key": "subject_id", "value": "", "type": "string" },
     { "key": "plan_id", "value": "", "type": "string" },
     { "key": "module_id", "value": "", "type": "string" },
-    { "key": "academic_item_id", "value": "", "type": "string" }
+    { "key": "academic_item_id", "value": "", "type": "string" },
+    { "key": "category_id", "value": "", "type": "string" },
+    { "key": "category_type_id", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -548,6 +550,203 @@
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-items/{{academic_item_id}}",
               "host": ["{{baseUrl}}{{apiPrefix}}"],
               "path": ["academic-items", "{{academic_item_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Academic Item Categories",
+      "description": "Global catalog CRUD.",
+      "item": [
+        {
+          "name": "Create Category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('category_id', pm.response.json().uuid);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Evaluations\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-categories",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-item-categories"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Categories",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-categories",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-item-categories"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Category",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-categories/{{category_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-item-categories", "{{category_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Category",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Tests\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-categories/{{category_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-item-categories", "{{category_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Category",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-categories/{{category_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-item-categories", "{{category_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Academic Item Category Types",
+      "description": "Global catalog CRUD (needs a category_id).",
+      "item": [
+        {
+          "name": "Create Category Type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('category_type_id', pm.response.json().uuid);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"academic_item_category_id\": \"{{category_id}}\",\n  \"name\": \"Exam\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-category-types",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-item-category-types"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Category Types (by category)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-category-types?category_id={{category_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-item-category-types"],
+              "query": [{ "key": "category_id", "value": "{{category_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Category Type",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-category-types/{{category_type_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-item-category-types", "{{category_type_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Category Type",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Written exam\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-category-types/{{category_type_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-item-category-types", "{{category_type_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Category Type",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-category-types/{{category_type_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-item-category-types", "{{category_type_id}}"]
             }
           },
           "response": []

@@ -226,10 +226,16 @@ Redis db 15, on the stack network):
 ./scripts/test-integration.sh
 ```
 
-These exercise the full HTTP flow with httpx: login/cookies, token rotation and
-reuse rejection, rate limiting (429) and the audit log persisted in Postgres.
-Live under `tests/integration/` and are marked `@pytest.mark.integration` (the
-unit run excludes them).
+These exercise the full HTTP flow with httpx against a real database:
+
+- **auth** — login/cookies, token rotation and reuse rejection, rate limiting
+  (429), audit log persisted in Postgres.
+- **domain resources** — full CRUD for subjects, plans, modules, academic items
+  (JSON content/metadata + soft delete) and category catalogs, plus ownership
+  isolation and validation errors (422).
+
+They live under `tests/integration/` and are marked `@pytest.mark.integration`
+(the unit run excludes them).
 
 ## Contribution standards (Grupo Central)
 
