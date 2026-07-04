@@ -33,7 +33,8 @@
     },
     { "key": "subject_id", "value": "", "type": "string" },
     { "key": "plan_id", "value": "", "type": "string" },
-    { "key": "module_id", "value": "", "type": "string" }
+    { "key": "module_id", "value": "", "type": "string" },
+    { "key": "academic_item_id", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -444,6 +445,109 @@
               "raw": "{{baseUrl}}{{apiPrefix}}/modules/{{module_id}}",
               "host": ["{{baseUrl}}{{apiPrefix}}"],
               "path": ["modules", "{{module_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Academic Items",
+      "description": "CRUD for academic items (needs a module_id). Soft delete.",
+      "item": [
+        {
+          "name": "Create Academic Item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('academic_item_id', pm.response.json().uuid);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"module_id\": \"{{module_id}}\",\n  \"title\": \"Exam 1\",\n  \"description\": \"First evaluation\",\n  \"content\": { \"questions\": 3 },\n  \"metadata\": {\n    \"starts_at\": \"2026-09-10T14:00:00Z\",\n    \"ends_at\": \"2026-09-10T16:00:00Z\",\n    \"is_graded\": true,\n    \"weight\": 30,\n    \"is_individual\": true,\n    \"estimated_duration\": 120\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-items",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-items"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Academic Items (by module)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-items?module_id={{module_id}}&limit=50&offset=0",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-items"],
+              "query": [
+                { "key": "module_id", "value": "{{module_id}}" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Academic Item",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-items/{{academic_item_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-items", "{{academic_item_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Academic Item",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Host", "value": "{{hostHeader}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metadata\": {\n    \"is_graded\": true,\n    \"weight\": 40,\n    \"is_individual\": false,\n    \"estimated_duration\": 90\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-items/{{academic_item_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-items", "{{academic_item_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Academic Item",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-items/{{academic_item_id}}",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["academic-items", "{{academic_item_id}}"]
             }
           },
           "response": []

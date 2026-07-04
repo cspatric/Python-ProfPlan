@@ -171,9 +171,14 @@ authenticated user and every query is scoped to that user.
 | Subjects | `/api/v1/subjects` | Full CRUD |
 | Plans | `/api/v1/plans` | Full CRUD; `subject_id` must belong to the user |
 | Modules | `/api/v1/modules` | Full CRUD; `plan_id` must belong to the user; list is filtered by `plan_id` |
+| Academic items | `/api/v1/academic-items` | Full CRUD; `module_id` must belong to the user; list filtered by `module_id`; **soft delete** |
 
 Each resource supports `POST` (create), `GET` (list, with `limit`/`offset`),
 `GET /{id}`, `PATCH /{id}` and `DELETE /{id}`.
+
+Academic items carry a free-form `content` (JSONB) and a structured `metadata`
+(JSONB) with the shape: `starts_at`, `ends_at`, `is_graded`, `weight`,
+`is_individual`, `estimated_duration` (plus optional `uuid` / `academic_item_id`).
 
 ## CORS & single entrypoint
 
