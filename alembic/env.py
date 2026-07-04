@@ -13,6 +13,9 @@ from app.infrastructure.database.base import Base
 # Import every model module so that Base.metadata is fully populated for
 # autogenerate. New modules with tables must be imported here.
 from app.modules.auth.infrastructure import models as auth_models  # noqa: F401
+from app.modules.plan_modules.infrastructure import (  # noqa: F401
+    models as module_models,
+)
 from app.modules.subjects.infrastructure import (  # noqa: F401
     models as subject_models,
 )
