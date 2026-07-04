@@ -1,21 +1,27 @@
 """Authentication domain exceptions."""
 
-
-class AuthError(Exception):
-    """Base class for authentication errors."""
+from app.shared.exceptions.base import RateLimitError, UnauthorizedError
 
 
-class InvalidCredentialsError(AuthError):
+class InvalidCredentialsError(UnauthorizedError):
     """Raised when the email/password pair is invalid."""
 
+    detail = "Invalid email or password"
 
-class RateLimitedError(AuthError):
+
+class RateLimitedError(RateLimitError):
     """Raised when too many login attempts were made."""
 
+    detail = "Too many login attempts. Try again later."
 
-class InvalidTokenError(AuthError):
+
+class InvalidTokenError(UnauthorizedError):
     """Raised when a refresh token is missing, invalid or expired."""
 
+    detail = "Invalid or expired refresh token"
 
-class TokenReuseError(AuthError):
+
+class TokenReuseError(UnauthorizedError):
     """Raised when a revoked refresh token is presented again."""
+
+    detail = "Refresh token reuse detected. All sessions revoked."

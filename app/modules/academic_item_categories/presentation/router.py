@@ -3,13 +3,8 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Query, status
 
-from app.modules.academic_item_categories.domain.exceptions import (
-    CategoryNotFoundError,
-    CategoryTypeNotFoundError,
-    InvalidCategoryError,
-)
 from app.modules.academic_item_categories.presentation.dependencies import (
     CategoryServiceDep,
     CategoryTypeServiceDep,
@@ -30,17 +25,6 @@ categories_router = APIRouter(
 types_router = APIRouter(
     prefix="/academic-item-category-types",
     tags=["academic-item-category-types"],
-)
-
-_CATEGORY_NOT_FOUND = HTTPException(
-    status_code=status.HTTP_404_NOT_FOUND, detail="Category not found"
-)
-_TYPE_NOT_FOUND = HTTPException(
-    status_code=status.HTTP_404_NOT_FOUND, detail="Category type not found"
-)
-_INVALID_CATEGORY = HTTPException(
-    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-    detail="Parent category not found",
 )
 
 
@@ -75,10 +59,7 @@ async def get_category(
     category_id: UUID, user: CurrentUser, service: CategoryServiceDep
 ) -> CategoryResponse:
     """Return a single category."""
-    try:
-        category = await service.get(category_id=category_id)
-    except CategoryNotFoundError as exc:
-        raise _CATEGORY_NOT_FOUND from exc
+    category = await service.get(category_id=category_id)
     return CategoryResponse.model_validate(category)
 
 
@@ -90,12 +71,9 @@ async def update_category(
     service: CategoryServiceDep,
 ) -> CategoryResponse:
     """Update a category."""
-    try:
-        category = await service.update(
-            category_id=category_id, data=payload.model_dump(exclude_unset=True)
-        )
-    except CategoryNotFoundError as exc:
-        raise _CATEGORY_NOT_FOUND from exc
+    category = await service.update(
+        category_id=category_id, data=payload.model_dump(exclude_unset=True)
+    )
     return CategoryResponse.model_validate(category)
 
 
@@ -104,10 +82,7 @@ async def delete_category(
     category_id: UUID, user: CurrentUser, service: CategoryServiceDep
 ) -> None:
     """Delete a category."""
-    try:
-        await service.delete(category_id=category_id)
-    except CategoryNotFoundError as exc:
-        raise _CATEGORY_NOT_FOUND from exc
+    await service.delete(category_id=category_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -122,10 +97,7 @@ async def create_category_type(
     service: CategoryTypeServiceDep,
 ) -> CategoryTypeResponse:
     """Create a category type under an existing category."""
-    try:
-        category_type = await service.create(data=payload.model_dump())
-    except InvalidCategoryError as exc:
-        raise _INVALID_CATEGORY from exc
+    category_type = await service.create(data=payload.model_dump())
     return CategoryTypeResponse.model_validate(category_type)
 
 
@@ -147,10 +119,7 @@ async def get_category_type(
     type_id: UUID, user: CurrentUser, service: CategoryTypeServiceDep
 ) -> CategoryTypeResponse:
     """Return a single category type."""
-    try:
-        category_type = await service.get(type_id=type_id)
-    except CategoryTypeNotFoundError as exc:
-        raise _TYPE_NOT_FOUND from exc
+    category_type = await service.get(type_id=type_id)
     return CategoryTypeResponse.model_validate(category_type)
 
 
@@ -162,14 +131,9 @@ async def update_category_type(
     service: CategoryTypeServiceDep,
 ) -> CategoryTypeResponse:
     """Update a category type."""
-    try:
-        category_type = await service.update(
-            type_id=type_id, data=payload.model_dump(exclude_unset=True)
-        )
-    except CategoryTypeNotFoundError as exc:
-        raise _TYPE_NOT_FOUND from exc
-    except InvalidCategoryError as exc:
-        raise _INVALID_CATEGORY from exc
+    category_type = await service.update(
+        type_id=type_id, data=payload.model_dump(exclude_unset=True)
+    )
     return CategoryTypeResponse.model_validate(category_type)
 
 
@@ -178,7 +142,4 @@ async def delete_category_type(
     type_id: UUID, user: CurrentUser, service: CategoryTypeServiceDep
 ) -> None:
     """Delete a category type."""
-    try:
-        await service.delete(type_id=type_id)
-    except CategoryTypeNotFoundError as exc:
-        raise _TYPE_NOT_FOUND from exc
+    await service.delete(type_id=type_id)

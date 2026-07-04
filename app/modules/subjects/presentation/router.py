@@ -2,10 +2,9 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Query, status
 
 from app.modules.auth.presentation.dependencies import CurrentUser
-from app.modules.subjects.domain.exceptions import SubjectNotFoundError
 from app.modules.subjects.presentation.dependencies import SubjectServiceDep
 from app.modules.subjects.presentation.schemas import (
     SubjectCreate,
@@ -14,10 +13,6 @@ from app.modules.subjects.presentation.schemas import (
 )
 
 router = APIRouter(prefix="/subjects", tags=["subjects"])
-
-_NOT_FOUND = HTTPException(
-    status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found"
-)
 
 
 @router.post("", response_model=SubjectResponse, status_code=status.HTTP_201_CREATED)
@@ -46,10 +41,7 @@ async def get_subject(
     subject_id: UUID, user: CurrentUser, service: SubjectServiceDep
 ) -> SubjectResponse:
     """Return a single subject."""
-    try:
-        subject = await service.get(user_id=user.uuid, subject_id=subject_id)
-    except SubjectNotFoundError as exc:
-        raise _NOT_FOUND from exc
+    subject = await service.get(user_id=user.uuid, subject_id=subject_id)
     return SubjectResponse.model_validate(subject)
 
 
@@ -61,14 +53,11 @@ async def update_subject(
     service: SubjectServiceDep,
 ) -> SubjectResponse:
     """Update a subject."""
-    try:
-        subject = await service.update(
-            user_id=user.uuid,
-            subject_id=subject_id,
-            data=payload.model_dump(exclude_unset=True),
-        )
-    except SubjectNotFoundError as exc:
-        raise _NOT_FOUND from exc
+    subject = await service.update(
+        user_id=user.uuid,
+        subject_id=subject_id,
+        data=payload.model_dump(exclude_unset=True),
+    )
     return SubjectResponse.model_validate(subject)
 
 
@@ -77,7 +66,4 @@ async def delete_subject(
     subject_id: UUID, user: CurrentUser, service: SubjectServiceDep
 ) -> None:
     """Delete a subject."""
-    try:
-        await service.delete(user_id=user.uuid, subject_id=subject_id)
-    except SubjectNotFoundError as exc:
-        raise _NOT_FOUND from exc
+    await service.delete(user_id=user.uuid, subject_id=subject_id)

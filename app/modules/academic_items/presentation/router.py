@@ -3,12 +3,8 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Query, status
 
-from app.modules.academic_items.domain.exceptions import (
-    AcademicItemNotFoundError,
-    InvalidModuleError,
-)
 from app.modules.academic_items.infrastructure.models import AcademicItem
 from app.modules.academic_items.presentation.dependencies import (
     AcademicItemServiceDep,
@@ -21,14 +17,6 @@ from app.modules.academic_items.presentation.schemas import (
 from app.modules.auth.presentation.dependencies import CurrentUser
 
 router = APIRouter(prefix="/academic-items", tags=["academic-items"])
-
-_NOT_FOUND = HTTPException(
-    status_code=status.HTTP_404_NOT_FOUND, detail="Academic item not found"
-)
-_INVALID_MODULE = HTTPException(
-    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-    detail="Module not found or not owned by the user",
-)
 
 
 def _create_data(payload: AcademicItemCreate) -> dict[str, Any]:
@@ -82,10 +70,7 @@ async def create_academic_item(
     service: AcademicItemServiceDep,
 ) -> AcademicItemResponse:
     """Create an academic item under a module owned by the user."""
-    try:
-        item = await service.create(user_id=user.uuid, data=_create_data(payload))
-    except InvalidModuleError as exc:
-        raise _INVALID_MODULE from exc
+    item = await service.create(user_id=user.uuid, data=_create_data(payload))
     return _to_response(item)
 
 
@@ -98,12 +83,9 @@ async def list_academic_items(
     offset: int = Query(default=0, ge=0),
 ) -> list[AcademicItemResponse]:
     """List the academic items of a module owned by the user."""
-    try:
-        items = await service.list(
-            user_id=user.uuid, module_id=module_id, limit=limit, offset=offset
-        )
-    except InvalidModuleError as exc:
-        raise _INVALID_MODULE from exc
+    items = await service.list(
+        user_id=user.uuid, module_id=module_id, limit=limit, offset=offset
+    )
     return [_to_response(item) for item in items]
 
 
@@ -112,10 +94,7 @@ async def get_academic_item(
     item_id: UUID, user: CurrentUser, service: AcademicItemServiceDep
 ) -> AcademicItemResponse:
     """Return a single academic item."""
-    try:
-        item = await service.get(user_id=user.uuid, item_id=item_id)
-    except AcademicItemNotFoundError as exc:
-        raise _NOT_FOUND from exc
+    item = await service.get(user_id=user.uuid, item_id=item_id)
     return _to_response(item)
 
 
@@ -127,14 +106,9 @@ async def update_academic_item(
     service: AcademicItemServiceDep,
 ) -> AcademicItemResponse:
     """Update an academic item."""
-    try:
-        item = await service.update(
-            user_id=user.uuid, item_id=item_id, data=_update_data(payload)
-        )
-    except AcademicItemNotFoundError as exc:
-        raise _NOT_FOUND from exc
-    except InvalidModuleError as exc:
-        raise _INVALID_MODULE from exc
+    item = await service.update(
+        user_id=user.uuid, item_id=item_id, data=_update_data(payload)
+    )
     return _to_response(item)
 
 
@@ -143,7 +117,4 @@ async def delete_academic_item(
     item_id: UUID, user: CurrentUser, service: AcademicItemServiceDep
 ) -> None:
     """Soft-delete an academic item."""
-    try:
-        await service.delete(user_id=user.uuid, item_id=item_id)
-    except AcademicItemNotFoundError as exc:
-        raise _NOT_FOUND from exc
+    await service.delete(user_id=user.uuid, item_id=item_id)

@@ -1,15 +1,9 @@
 """Authentication HTTP endpoints."""
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, Request, Response
 
 from app.core.config import get_settings
 from app.modules.auth.application.dto import IssuedTokens
-from app.modules.auth.domain.exceptions import (
-    InvalidCredentialsError,
-    InvalidTokenError,
-    RateLimitedError,
-    TokenReuseError,
-)
 from app.modules.auth.presentation.dependencies import (
     AuthServiceDep,
     CurrentUser,
@@ -66,25 +60,17 @@ async def login(
     response: Response,
     service: AuthServiceDep,
 ) -> UserResponse:
-    """Authenticate with email/password and set the auth cookies."""
-    try:
-        tokens = await service.login(
-            email=payload.email,
-            password=payload.password,
-            ip_address=_client_ip(request),
-            user_agent=request.headers.get("user-agent"),
-        )
-    except RateLimitedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many login attempts. Try again later.",
-        ) from exc
-    except InvalidCredentialsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        ) from exc
+    """Authenticate with email/password and set the auth cookies.
 
+    Invalid credentials (401) and rate limiting (429) are raised by the service
+    and turned into responses by the central exception handlers.
+    """
+    tokens = await service.login(
+        email=payload.email,
+        password=payload.password,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     _set_auth_cookies(response, tokens)
     return UserResponse.model_validate(tokens.user)
 
@@ -95,27 +81,16 @@ async def refresh(
     response: Response,
     service: AuthServiceDep,
 ) -> UserResponse:
-    """Rotate the refresh token and re-issue the auth cookies."""
-    raw_token = request.cookies.get(_settings.refresh_cookie_name)
-    try:
-        tokens = await service.refresh(
-            raw_token=raw_token,
-            ip_address=_client_ip(request),
-            user_agent=request.headers.get("user-agent"),
-        )
-    except TokenReuseError as exc:
-        _clear_auth_cookies(response)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token reuse detected. All sessions revoked.",
-        ) from exc
-    except InvalidTokenError as exc:
-        _clear_auth_cookies(response)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
-        ) from exc
+    """Rotate the refresh token and re-issue the auth cookies.
 
+    Invalid/expired tokens and reuse detection (401) are raised by the service
+    and handled centrally.
+    """
+    tokens = await service.refresh(
+        raw_token=request.cookies.get(_settings.refresh_cookie_name),
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     _set_auth_cookies(response, tokens)
     return UserResponse.model_validate(tokens.user)
 
