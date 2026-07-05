@@ -55,6 +55,17 @@ class Settings(BaseSettings):
     # Embeddings (Ollama)
     ollama_base_url: str = "http://ollama:11434"
     embedding_model: str = "bge-m3"
+
+    # LLM gateway (fallback chain: Claude -> OpenAI -> Ollama)
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-5"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
+    ollama_chat_model: str = "llama3.1"
+    llm_max_tokens: int = 2048
+    llm_timeout_seconds: float = 60.0
+    llm_circuit_failure_threshold: int = 3
+    llm_circuit_reset_seconds: float = 30.0
     # Cache embeddings in Redis to avoid re-embedding identical text (7 days).
     embedding_cache_ttl_seconds: int = 604800
 
