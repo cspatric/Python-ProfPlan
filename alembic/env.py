@@ -18,6 +18,7 @@ from app.modules.academic_item_categories.infrastructure import (  # noqa: F401
 from app.modules.academic_items.infrastructure import (  # noqa: F401
     models as academic_item_models,
 )
+from app.modules.audit.infrastructure import models as audit_models  # noqa: F401
 from app.modules.auth.infrastructure import models as auth_models  # noqa: F401
 from app.modules.documents.infrastructure import (  # noqa: F401
     models as document_models,

@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.modules.audit.domain.entities import AuditAction
 from app.modules.subjects.application.service import SubjectService
 from app.modules.subjects.domain.exceptions import SubjectNotFoundError
 from app.modules.subjects.infrastructure.models import Subject
@@ -16,6 +17,17 @@ class FakeSession:
 
     async def refresh(self, obj: object) -> None:
         pass
+
+    async def flush(self) -> None:
+        pass
+
+
+class FakeAuditRecorder:
+    def __init__(self) -> None:
+        self.records: list[dict] = []
+
+    def record(self, **kwargs: object) -> None:
+        self.records.append(kwargs)
 
 
 class FakeSubjectRepository:
@@ -46,7 +58,7 @@ class FakeSubjectRepository:
 
 def make_service() -> tuple[SubjectService, FakeSubjectRepository]:
     repo = FakeSubjectRepository()
-    return SubjectService(FakeSession(), repo), repo
+    return SubjectService(FakeSession(), repo, FakeAuditRecorder()), repo
 
 
 async def test_create_sets_owner_and_persists() -> None:
@@ -60,6 +72,8 @@ async def test_create_sets_owner_and_persists() -> None:
     assert subject.uuid in repo.items
     assert subject.user_id == user_id
     assert subject.name == "Math"
+    assert service._audit.records[0]["action"] == AuditAction.CREATE
+    assert service._audit.records[0]["entity_id"] == subject.uuid
 
 
 async def test_get_of_other_users_subject_raises() -> None:

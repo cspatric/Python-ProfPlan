@@ -10,6 +10,7 @@ from app.modules.academic_items.presentation.router import (
     router as academic_items_router,
 )
 from app.modules.ai.presentation.router import router as ai_router
+from app.modules.audit.presentation.router import router as audit_router
 from app.modules.auth.presentation.router import router as auth_router
 from app.modules.documents.presentation.router import (
     router as documents_router,
@@ -30,3 +31,4 @@ api_router.include_router(types_router)
 api_router.include_router(documents_router)
 api_router.include_router(rag_router)
 api_router.include_router(ai_router)
+api_router.include_router(audit_router)

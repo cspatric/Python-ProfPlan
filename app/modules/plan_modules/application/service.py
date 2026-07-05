@@ -5,6 +5,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.audit.application.recorder import (
+    AuditRecorder,
+    entity_snapshot,
+    jsonable,
+)
+from app.modules.audit.domain.entities import AuditAction
 from app.modules.plan_modules.domain.exceptions import (
     InvalidPlanError,
     ModuleNotFoundError,
@@ -12,6 +18,8 @@ from app.modules.plan_modules.domain.exceptions import (
 from app.modules.plan_modules.infrastructure.models import Module
 from app.modules.plan_modules.infrastructure.repository import ModuleRepository
 from app.modules.teaching_plans.infrastructure.repository import PlanRepository
+
+_ENTITY = "module"
 
 
 class ModuleService:
@@ -22,10 +30,12 @@ class ModuleService:
         session: AsyncSession,
         repository: ModuleRepository,
         plans: PlanRepository,
+        audit: AuditRecorder,
     ) -> None:
         self._session = session
         self._repo = repository
         self._plans = plans
+        self._audit = audit
 
     async def _ensure_plan_owned(self, plan_id: UUID, user_id: UUID) -> None:
         if await self._plans.get_by_id(plan_id, user_id) is None:
@@ -36,6 +46,13 @@ class ModuleService:
         await self._ensure_plan_owned(data["plan_id"], user_id)
         module = Module(user_id=user_id, created_by=user_id, **data)
         self._repo.add(module)
+        await self._session.flush()
+        self._audit.record(
+            action=AuditAction.CREATE,
+            entity=_ENTITY,
+            entity_id=module.uuid,
+            changes=entity_snapshot(module),
+        )
         await self._session.commit()
         await self._session.refresh(module)
         return module
@@ -63,8 +80,18 @@ class ModuleService:
         module = await self.get(user_id=user_id, module_id=module_id)
         if "plan_id" in data:
             await self._ensure_plan_owned(data["plan_id"], user_id)
+        changes = {
+            field: {"old": jsonable(getattr(module, field)), "new": jsonable(value)}
+            for field, value in data.items()
+        }
         for field, value in data.items():
             setattr(module, field, value)
+        self._audit.record(
+            action=AuditAction.UPDATE,
+            entity=_ENTITY,
+            entity_id=module.uuid,
+            changes=changes,
+        )
         await self._session.commit()
         await self._session.refresh(module)
         return module
@@ -72,5 +99,11 @@ class ModuleService:
     async def delete(self, *, user_id: UUID, module_id: UUID) -> None:
         """Delete a module."""
         module = await self.get(user_id=user_id, module_id=module_id)
+        self._audit.record(
+            action=AuditAction.DELETE,
+            entity=_ENTITY,
+            entity_id=module.uuid,
+            changes=entity_snapshot(module),
+        )
         await self._repo.delete(module)
         await self._session.commit()

@@ -21,6 +21,14 @@ class FakeSession:
     async def refresh(self, obj: object) -> None:
         pass
 
+    async def flush(self) -> None:
+        pass
+
+
+class FakeAuditRecorder:
+    def record(self, **kwargs: object) -> None:
+        pass
+
 
 class FakeModuleRepository:
     def __init__(self) -> None:
@@ -74,7 +82,9 @@ def make_service(
     owned: set[tuple[UUID, UUID]],
 ) -> tuple[ModuleService, FakeModuleRepository]:
     repo = FakeModuleRepository()
-    service = ModuleService(FakeSession(), repo, FakePlanRepository(owned))
+    service = ModuleService(
+        FakeSession(), repo, FakePlanRepository(owned), FakeAuditRecorder()
+    )
     return service, repo
 
 

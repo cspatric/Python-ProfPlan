@@ -5,6 +5,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.audit.application.recorder import (
+    AuditRecorder,
+    entity_snapshot,
+    jsonable,
+)
+from app.modules.audit.domain.entities import AuditAction
 from app.modules.subjects.infrastructure.repository import SubjectRepository
 from app.modules.teaching_plans.domain.exceptions import (
     InvalidSubjectError,
@@ -12,6 +18,8 @@ from app.modules.teaching_plans.domain.exceptions import (
 )
 from app.modules.teaching_plans.infrastructure.models import Plan
 from app.modules.teaching_plans.infrastructure.repository import PlanRepository
+
+_ENTITY = "plan"
 
 
 class PlanService:
@@ -22,10 +30,12 @@ class PlanService:
         session: AsyncSession,
         repository: PlanRepository,
         subjects: SubjectRepository,
+        audit: AuditRecorder,
     ) -> None:
         self._session = session
         self._repo = repository
         self._subjects = subjects
+        self._audit = audit
 
     async def _ensure_subject_owned(self, subject_id: UUID, user_id: UUID) -> None:
         if await self._subjects.get_by_id(subject_id, user_id) is None:
@@ -36,6 +46,13 @@ class PlanService:
         await self._ensure_subject_owned(data["subject_id"], user_id)
         plan = Plan(user_id=user_id, **data)
         self._repo.add(plan)
+        await self._session.flush()
+        self._audit.record(
+            action=AuditAction.CREATE,
+            entity=_ENTITY,
+            entity_id=plan.uuid,
+            changes=entity_snapshot(plan),
+        )
         await self._session.commit()
         await self._session.refresh(plan)
         return plan
@@ -58,8 +75,18 @@ class PlanService:
         plan = await self.get(user_id=user_id, plan_id=plan_id)
         if "subject_id" in data:
             await self._ensure_subject_owned(data["subject_id"], user_id)
+        changes = {
+            field: {"old": jsonable(getattr(plan, field)), "new": jsonable(value)}
+            for field, value in data.items()
+        }
         for field, value in data.items():
             setattr(plan, field, value)
+        self._audit.record(
+            action=AuditAction.UPDATE,
+            entity=_ENTITY,
+            entity_id=plan.uuid,
+            changes=changes,
+        )
         await self._session.commit()
         await self._session.refresh(plan)
         return plan
@@ -67,5 +94,11 @@ class PlanService:
     async def delete(self, *, user_id: UUID, plan_id: UUID) -> None:
         """Delete a plan."""
         plan = await self.get(user_id=user_id, plan_id=plan_id)
+        self._audit.record(
+            action=AuditAction.DELETE,
+            entity=_ENTITY,
+            entity_id=plan.uuid,
+            changes=entity_snapshot(plan),
+        )
         await self._repo.delete(plan)
         await self._session.commit()

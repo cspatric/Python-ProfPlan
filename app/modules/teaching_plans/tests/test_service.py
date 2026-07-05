@@ -21,6 +21,14 @@ class FakeSession:
     async def refresh(self, obj: object) -> None:
         pass
 
+    async def flush(self) -> None:
+        pass
+
+
+class FakeAuditRecorder:
+    def record(self, **kwargs: object) -> None:
+        pass
+
 
 class FakePlanRepository:
     def __init__(self) -> None:
@@ -72,7 +80,9 @@ def make_service(
     owned: set[tuple[UUID, UUID]],
 ) -> tuple[PlanService, FakePlanRepository]:
     repo = FakePlanRepository()
-    service = PlanService(FakeSession(), repo, FakeSubjectRepository(owned))
+    service = PlanService(
+        FakeSession(), repo, FakeSubjectRepository(owned), FakeAuditRecorder()
+    )
     return service, repo
 
 

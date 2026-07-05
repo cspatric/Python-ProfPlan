@@ -20,6 +20,7 @@ from app.modules.academic_item_categories.infrastructure import (  # noqa: F401
 from app.modules.academic_items.infrastructure import (  # noqa: F401
     models as _academic_item_models,
 )
+from app.modules.audit.infrastructure import models as _audit_models  # noqa: F401
 from app.modules.auth.infrastructure import models as _auth_models  # noqa: F401
 from app.modules.documents.infrastructure import (  # noqa: F401
     models as _document_models,
@@ -39,7 +40,7 @@ from app.modules.users.infrastructure.repository import UserRepository
 
 _settings = get_settings()
 _TABLES = (
-    "users, providers, user_providers, refresh_tokens, auth_logs, "
+    "users, providers, user_providers, refresh_tokens, auth_logs, audit_logs, "
     "subjects, plans, modules, academic_items, "
     "academic_item_category, academic_item_category_types, "
     "document_format, document, document_content, chunks"
