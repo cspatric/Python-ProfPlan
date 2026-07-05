@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     DateTime,
+    Enum,
     ForeignKey,
     Integer,
     String,
@@ -15,6 +16,7 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base
+from app.modules.documents.domain.entities import IngestionStatus
 
 
 class DocumentFormat(Base):
@@ -51,6 +53,15 @@ class Document(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     document_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    # RAG ingestion lifecycle (async, driven by the Celery worker).
+    ingestion_status: Mapped[IngestionStatus] = mapped_column(
+        Enum(IngestionStatus, name="ingestion_status"),
+        nullable=False,
+        default=IngestionStatus.PENDING,
+        server_default=IngestionStatus.PENDING.name,
+        index=True,
+    )
+    ingestion_error: Mapped[str | None] = mapped_column(Text)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

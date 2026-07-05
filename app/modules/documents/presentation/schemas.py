@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from app.modules.documents.domain.entities import IngestionStatus
+
 
 class DocumentResponse(BaseModel):
     """Public representation of a document."""
@@ -16,6 +18,7 @@ class DocumentResponse(BaseModel):
     document_format_id: UUID | None
     title: str
     document_path: str
+    ingestion_status: IngestionStatus
     created_at: datetime
     updated_at: datetime
 
@@ -24,4 +27,5 @@ class DocumentStatusResponse(BaseModel):
     """Ingestion status of a document."""
 
     document_id: UUID
-    status: str
+    status: IngestionStatus
+    error: str | None = None

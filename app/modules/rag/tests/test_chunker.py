@@ -26,3 +26,25 @@ def test_long_paragraph_is_split_into_windows() -> None:
     assert all(len(c) <= 100 for c in chunks)
     # Reassembling (accounting for overlap) preserves all characters.
     assert "".join(chunks).count("x") >= 250
+
+
+def test_headers_prefix_chunks_with_breadcrumb() -> None:
+    text = (
+        "# Biology\n\n"
+        "## Photosynthesis\n\nPlants convert light to energy.\n\n"
+        "## Respiration\n\nCells release energy."
+    )
+    chunks = chunk_markdown(text, max_chars=200)
+
+    assert any(c.startswith("Biology > Photosynthesis") for c in chunks)
+    assert any(c.startswith("Biology > Respiration") for c in chunks)
+    assert any("Plants convert light to energy." in c for c in chunks)
+
+
+def test_section_content_stays_with_its_heading() -> None:
+    text = "# A\n\nalpha\n\n# B\n\nbeta"
+    chunks = chunk_markdown(text, max_chars=200)
+
+    a_chunk = next(c for c in chunks if "alpha" in c)
+    assert a_chunk.startswith("A")
+    assert "beta" not in a_chunk

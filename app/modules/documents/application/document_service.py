@@ -138,9 +138,9 @@ class DocumentContentService:
         await self._ensure_document_owned(document_id, user_id)
         return await self._contents.list_by_document(document_id)
 
-    async def get_status(self, *, user_id: UUID, document_id: UUID) -> str:
-        """Return "processed" if the document has parsed content, else "pending"."""
-        await self._ensure_document_owned(document_id, user_id)
-        if await self._contents.has_content(document_id):
-            return "processed"
-        return "pending"
+    async def get_status(self, *, user_id: UUID, document_id: UUID) -> Document:
+        """Return the owned document (exposing its ingestion status/error)."""
+        document = await self._documents.get_by_id(document_id, user_id)
+        if document is None:
+            raise DocumentNotFoundError
+        return document

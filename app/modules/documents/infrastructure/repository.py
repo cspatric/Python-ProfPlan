@@ -2,9 +2,10 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.documents.domain.entities import IngestionStatus
 from app.modules.documents.infrastructure.models import (
     Document,
     DocumentContent,
@@ -65,6 +66,20 @@ class DocumentRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def set_ingestion_status(
+        self,
+        document_id: UUID,
+        status: IngestionStatus,
+        *,
+        error: str | None = None,
+    ) -> None:
+        """Update a document's ingestion status (does not commit)."""
+        await self._session.execute(
+            update(Document)
+            .where(Document.uuid == document_id)
+            .values(ingestion_status=status, ingestion_error=error)
+        )
 
 
 class DocumentFormatRepository:

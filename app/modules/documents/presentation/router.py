@@ -70,9 +70,13 @@ async def get_document(
 async def get_document_status(
     document_id: UUID, user: CurrentUser, service: ContentServiceDep
 ) -> DocumentStatusResponse:
-    """Return whether the document has finished ingestion."""
-    state = await service.get_status(user_id=user.uuid, document_id=document_id)
-    return DocumentStatusResponse(document_id=document_id, status=state)
+    """Return the document's ingestion status (and error, if it failed)."""
+    document = await service.get_status(user_id=user.uuid, document_id=document_id)
+    return DocumentStatusResponse(
+        document_id=document_id,
+        status=document.ingestion_status,
+        error=document.ingestion_error,
+    )
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

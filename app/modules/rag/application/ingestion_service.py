@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.storage.minio import ObjectStorage
+from app.modules.documents.domain.entities import IngestionStatus
 from app.modules.documents.infrastructure.models import DocumentContent
 from app.modules.documents.infrastructure.repository import (
     DocumentContentRepository,
@@ -41,10 +42,19 @@ class IngestionService:
         self._indexing = indexing
 
     async def ingest(self, document_id: UUID) -> DocumentContent | None:
-        """Run the full ingestion pipeline for a stored document."""
+        """Run the full ingestion pipeline for a stored document.
+
+        The status only flips to INDEXED once the chunks (with embeddings) are
+        actually persisted in pgvector — never before.
+        """
         document = await self._documents.get_for_processing(document_id)
         if document is None:
             return None
+
+        await self._documents.set_ingestion_status(
+            document_id, IngestionStatus.PROCESSING, error=None
+        )
+        await self._session.commit()
 
         data = await asyncio.to_thread(self._storage.get_object, document.document_path)
         markdown = parse_to_markdown(document.document_path, data)
@@ -62,20 +72,23 @@ class IngestionService:
         await self._session.refresh(content)
 
         pieces = chunk_markdown(markdown)
-        if not pieces:
-            return content
+        if pieces:
+            embeddings = await self._embedder.embed_texts(pieces)
+            chunks = [
+                ChunkInput(
+                    chunk_index=index,
+                    content=piece,
+                    token_count=len(piece.split()),
+                    embedding=embedding,
+                )
+                for index, (piece, embedding) in enumerate(
+                    zip(pieces, embeddings, strict=True)
+                )
+            ]
+            await self._indexing.index_content(content_id=content.uuid, chunks=chunks)
 
-        embeddings = await self._embedder.embed_texts(pieces)
-        chunks = [
-            ChunkInput(
-                chunk_index=index,
-                content=piece,
-                token_count=len(piece.split()),
-                embedding=embedding,
-            )
-            for index, (piece, embedding) in enumerate(
-                zip(pieces, embeddings, strict=True)
-            )
-        ]
-        await self._indexing.index_content(content_id=content.uuid, chunks=chunks)
+        # Chunks are now in pgvector (or the document was legitimately empty):
+        # only now is the document truly searchable.
+        await self._documents.set_ingestion_status(document_id, IngestionStatus.INDEXED)
+        await self._session.commit()
         return content
