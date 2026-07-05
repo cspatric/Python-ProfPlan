@@ -1,12 +1,15 @@
 """Application entrypoint."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from sqlalchemy import text
 
 from app.api.exceptions import register_exception_handlers
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.infrastructure.database.session import engine
+from app.infrastructure.redis.client import redis_client
 from app.infrastructure.telemetry.traces import setup_tracing
 
 settings = get_settings()
@@ -36,5 +39,31 @@ app.include_router(api_router, prefix=settings.api_prefix)
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    """Liveness/readiness probe used by the container healthcheck."""
+    """Liveness probe (is the process up?) used by the container healthcheck."""
     return {"status": "ok"}
+
+
+@app.get("/ready")
+async def ready(response: Response) -> dict[str, object]:
+    """Readiness probe: verifies the database and Redis are reachable."""
+    checks: dict[str, str] = {}
+    healthy = True
+
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception:
+        checks["database"] = "error"
+        healthy = False
+
+    try:
+        await redis_client.ping()
+        checks["redis"] = "ok"
+    except Exception:
+        checks["redis"] = "error"
+        healthy = False
+
+    if not healthy:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return {"status": "ready" if healthy else "degraded", "checks": checks}
