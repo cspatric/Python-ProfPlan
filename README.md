@@ -38,9 +38,11 @@ per responsibility):
 | postgres | `pgvector/pgvector:pg17` | Database + pgvector (not exposed) | — |
 | redis | `redis:8-alpine` | Cache + Celery broker/backend | — |
 | minio | `minio/minio` | S3-compatible object storage | 9000, 9001 (console) |
+| ollama | `ollama/ollama` | Embedding model server (bge-m3) | — |
 | prometheus | `prom/prometheus` | Metrics | 9090 |
-| grafana | `grafana/grafana` | Dashboards | 3000 |
+| grafana | `grafana/grafana` | Dashboards (metrics, logs, traces) | 3000 |
 | loki | `grafana/loki` | Log aggregation | 3100 |
+| tempo | `grafana/tempo` | Distributed traces backend | — |
 | otel-collector | `otel/opentelemetry-collector-contrib` | Telemetry pipeline | 4317, 4318 |
 | adminer | `adminer` | DB UI (development only) | 8081 |
 
@@ -83,16 +85,21 @@ Once the stack is up, each service is reachable at:
 |---------|-----|-------|
 | API (FastAPI) | http://api.localhost/health | Via Traefik. Add `127.0.0.1 api.localhost` to your hosts file, or send `Host: api.localhost` header |
 | Traefik dashboard | http://localhost:8080/dashboard/ | Router/service overview |
-| Flower (Celery) | http://localhost:5555 | Tasks, queues, workers |
-| Grafana | http://localhost:3000 | Default login `admin` / `admin` (Prometheus + Loki datasources pre-provisioned) |
+| Flower (Celery) | http://localhost:5555 | Celery task monitoring — tasks, queues, failures, workers (task-level detail Prometheus doesn't give) |
+| Grafana | http://localhost:3000 | Default login `admin` / `admin` (Prometheus + Loki + **Tempo** datasources pre-provisioned) |
 | Prometheus | http://localhost:9090 | Metrics |
 | MinIO console | http://localhost:9001 | Login with `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` from `.env` |
 | MinIO API (S3) | http://localhost:9000 | S3-compatible endpoint |
 | Adminer | http://localhost:8081 | DB UI — server `postgres`, credentials from `.env` |
 | Loki | http://localhost:3100 | Log API (`/ready`, `/loki/api/...`) |
-| OTel Collector | grpc `localhost:4317` / http `localhost:4318` | OTLP ingest |
+| OTel Collector | grpc `localhost:4317` / http `localhost:4318` | OTLP ingest (traces/metrics/logs) |
+| Tempo (traces) | _not exposed to the host_ | Distributed traces backend — view them in Grafana (Explore → Tempo). `observability` profile |
+| Ollama (embeddings) | _not exposed to the host_ | Serves the **bge-m3** model. Pull once: `docker compose exec ollama ollama pull bge-m3` |
 | PostgreSQL | _not exposed to the host_ | Reachable only inside the `backend` network |
 | Redis | _not exposed to the host_ | Reachable only inside the `backend` network |
+
+> `observability` services (Grafana, Prometheus, Loki, OTel Collector, Tempo)
+> require the `--profile observability`; Ollama runs under `dev`/`production`.
 
 To add the API host entry on Linux/macOS:
 
