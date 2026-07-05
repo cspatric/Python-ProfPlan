@@ -374,6 +374,49 @@ services:
     logging: *default-logging
 
   # -------------------------------------------------------------------------
+  # Node Exporter — host-level metrics (CPU, memory, disk, network) for
+  # Prometheus. Reads the host filesystem read-only via bind mounts.
+  # -------------------------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:latest
+    profiles: ["observability"]
+    restart: unless-stopped
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/host"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro,rslave
+    networks:
+      - backend
+    ports:
+      - "9100:9100"
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Promtail — tails every container's logs (Docker service discovery) and
+  # ships them to Loki. The app logs structured JSON, queryable via `| json`.
+  # -------------------------------------------------------------------------
+  promtail:
+    image: grafana/promtail:latest
+    profiles: ["observability"]
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail.yml
+    depends_on:
+      loki:
+        condition: service_started
+    volumes:
+      - ./docker/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - backend
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
   # Ruff — lint / PEP 8, run on demand: `docker compose run --rm lint`
   # -------------------------------------------------------------------------
   lint:

@@ -42,6 +42,8 @@ per responsibility):
 | prometheus | `prom/prometheus` | Metrics | 9090 |
 | grafana | `grafana/grafana` | Dashboards (metrics, logs, traces) | 3000 |
 | loki | `grafana/loki` | Log aggregation | 3100 |
+| promtail | `grafana/promtail` | Ships all container logs to Loki | — |
+| node-exporter | `prom/node-exporter` | Host metrics (CPU, memory, disk, network) | 9100 |
 | tempo | `grafana/tempo` | Distributed traces backend | — |
 | otel-collector | `otel/opentelemetry-collector-contrib` | Telemetry pipeline | 4317, 4318 |
 | adminer | `adminer` | DB UI (development only) | 8081 |
@@ -58,6 +60,25 @@ auto-instrument FastAPI, SQLAlchemy, Redis, httpx and Celery, exporting spans to
 the collector → Tempo → Grafana (Tempo datasource is pre-provisioned). Context
 propagates across the Redis broker, so a document upload and its background
 ingestion (parse → embed → index) appear in a **single trace**.
+
+### Logging (structured → Loki)
+
+Every process logs single-line **JSON** to stdout (`LOG_LEVEL` controls the
+level). Promtail discovers all containers via the Docker socket and ships their
+logs to Loki, queryable in Grafana (Explore → Loki), e.g.
+`{container="backend-api-1"} | json | user_id="..."`.
+
+A `RequestLoggingMiddleware` emits one line per HTTP request with rich context —
+method, path, status, latency, client IP, user agent, the **acting user**
+(`user_id`/`user_email`/`user_role`) and the `trace_id`, so a log line links
+straight to its span in Tempo. Unhandled and 5xx errors are recorded on the
+active span (exception + stacktrace).
+
+### Metrics (Prometheus)
+
+The API exposes `/metrics` (HTTP request rate, latency and status via
+`prometheus-fastapi-instrumentator`). Prometheus also scrapes **node-exporter**
+for host metrics (CPU, memory, disk, network) and the OTel collector.
 
 > This repository is **backend-only**. The React frontend lives in a separate
 > repository and is intentionally not part of this stack.

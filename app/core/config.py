@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     otel_enabled: bool = False
     otel_exporter_otlp_endpoint: str = "http://otel-collector:4317"
 
+    # Logging — structured JSON to stdout (shipped to Loki by Promtail).
+    log_level: str = "INFO"
+
     @property
     def is_development(self) -> bool:
         """True when running in the development environment."""

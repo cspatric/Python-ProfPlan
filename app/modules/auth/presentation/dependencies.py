@@ -66,6 +66,12 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
+
+    # Expose the acting user to the request-logging middleware so every HTTP
+    # log line records who performed the action.
+    request.state.user_id = str(user.uuid)
+    request.state.user_email = user.email
+    request.state.user_role = user.role.value
     return user
 
 

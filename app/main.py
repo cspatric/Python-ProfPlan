@@ -3,19 +3,34 @@
 from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import text
 
 from app.api.exceptions import register_exception_handlers
+from app.api.middleware import RequestLoggingMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.infrastructure.database.session import engine
 from app.infrastructure.redis.client import redis_client
+from app.infrastructure.telemetry.logging import setup_logging
 from app.infrastructure.telemetry.traces import setup_tracing
 
 settings = get_settings()
 
+# Structured JSON logging to stdout (shipped to Loki by Promtail). Configure it
+# before anything else so the whole process logs in one consistent format.
+setup_logging(settings.log_level)
+
 app = FastAPI(title="ProfPlan API")
 register_exception_handlers(app)
+
+# One structured log line per HTTP request (method, user, status, latency, ...).
+app.add_middleware(RequestLoggingMiddleware)
+
+# Prometheus metrics at /metrics (request rate, latency, status codes).
+Instrumentator().instrument(app).expose(
+    app, endpoint="/metrics", include_in_schema=False
+)
 
 # Distributed tracing (opt-in via OTEL_ENABLED).
 if settings.otel_enabled:

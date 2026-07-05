@@ -1,0 +1,30 @@
+# Promtail — discovers every running container via the Docker socket and ships
+# its stdout/stderr logs to Loki. The app logs single-line JSON, so in Grafana
+# you can parse fields with `{container="backend-api-1"} | json`.
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # /backend-api-1 -> backend-api-1
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: ["__meta_docker_container_log_stream"]
+        target_label: stream
+      # Compose project + service labels, when present.
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_project"]
+        target_label: compose_project
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: compose_service
