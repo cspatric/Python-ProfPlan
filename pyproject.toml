@@ -21,6 +21,8 @@ dependencies = [
     "flower>=2.0",
     "minio>=7.2",
     "pypdf>=5.1",
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
     "httpx>=0.28",
     "python-multipart>=0.0.20",
     "prometheus-client>=0.21",
@@ -38,6 +40,7 @@ dev = [
     "ruff==0.9.6",
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
+    "pytest-cov>=6.0",
 ]
 
 [tool.pytest.ini_options]

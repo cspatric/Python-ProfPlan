@@ -197,7 +197,7 @@ authenticated user and every query is scoped to that user.
 
 Uploading a document (`POST /api/v1/documents`, multipart: `file`, `subject_id`,
 `title`) stores it in MinIO and enqueues a Celery task. The worker then parses
-it to markdown (txt/md/pdf), chunks it, generates embeddings with **bge-m3**
+it to markdown (txt/md/pdf/docx/pptx), chunks it, generates embeddings with **bge-m3**
 (Ollama, 1024-dim) and indexes the chunks in pgvector for cosine search.
 
 Pull the embedding model once after starting the stack:
@@ -267,6 +267,14 @@ These exercise the full HTTP flow with httpx against a real database:
 
 They live under `tests/integration/` and are marked `@pytest.mark.integration`
 (the unit run excludes them).
+
+**Coverage**: `./scripts/coverage.sh` runs the unit suite with a coverage report.
+
+**Pre-commit** (optional): `pipx install pre-commit && pre-commit install` runs
+Ruff lint + format on every commit (see `.pre-commit-config.yaml`).
+
+Common tasks are also wrapped in a `Makefile` (`make up`, `make test`,
+`make test-integration`, `make coverage`, `make migrate`, `make pull-model`, …).
 
 ## Contribution standards (Grupo Central)
 
