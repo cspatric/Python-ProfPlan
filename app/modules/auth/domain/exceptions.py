@@ -1,12 +1,22 @@
 """Authentication domain exceptions."""
 
-from app.shared.exceptions.base import RateLimitError, UnauthorizedError
+from app.shared.exceptions.base import (
+    ConflictError,
+    RateLimitError,
+    UnauthorizedError,
+)
 
 
 class InvalidCredentialsError(UnauthorizedError):
     """Raised when the email/password pair is invalid."""
 
     detail = "Invalid email or password"
+
+
+class EmailAlreadyRegisteredError(ConflictError):
+    """Raised when registering with an email that already exists."""
+
+    detail = "Email already registered"
 
 
 class RateLimitedError(RateLimitError):

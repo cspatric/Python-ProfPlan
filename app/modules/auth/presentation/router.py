@@ -1,6 +1,6 @@
 """Authentication HTTP endpoints."""
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Request, Response, status
 
 from app.core.config import get_settings
 from app.modules.auth.application.dto import IssuedTokens
@@ -11,6 +11,7 @@ from app.modules.auth.presentation.dependencies import (
 from app.modules.auth.presentation.schemas import (
     LoginRequest,
     MessageResponse,
+    RegisterRequest,
     UserResponse,
 )
 
@@ -51,6 +52,32 @@ def _set_auth_cookies(response: Response, tokens: IssuedTokens) -> None:
 def _clear_auth_cookies(response: Response) -> None:
     for name in (_settings.access_cookie_name, _settings.refresh_cookie_name):
         response.delete_cookie(key=name, domain=_settings.cookie_domain, path="/")
+
+
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def register(
+    payload: RegisterRequest,
+    request: Request,
+    response: Response,
+    service: AuthServiceDep,
+) -> UserResponse:
+    """Create a new account and sign in (sets the auth cookies).
+
+    A duplicate email raises 409, handled by the central exception handlers.
+    """
+    tokens = await service.register(
+        name=payload.name,
+        email=payload.email,
+        password=payload.password,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    _set_auth_cookies(response, tokens)
+    return UserResponse.model_validate(tokens.user)
 
 
 @router.post("/login", response_model=UserResponse)

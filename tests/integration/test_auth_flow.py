@@ -7,10 +7,51 @@ from app.infrastructure.database.session import SessionFactory
 
 pytestmark = pytest.mark.integration
 
+REGISTER = "/api/v1/auth/register"
 LOGIN = "/api/v1/auth/login"
 REFRESH = "/api/v1/auth/refresh"
 LOGOUT = "/api/v1/auth/logout"
 ME = "/api/v1/auth/me"
+
+
+async def test_register_creates_account_and_signs_in(client):
+    resp = await client.post(
+        REGISTER,
+        json={"name": "New User", "email": "new@test.com", "password": "Senha@123"},
+    )
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["email"] == "new@test.com"
+    assert body["name"] == "New User"
+    assert "access_token" in client.cookies
+    assert "refresh_token" in client.cookies
+
+    me = await client.get(ME)
+    assert me.status_code == 200
+    assert me.json()["email"] == "new@test.com"
+
+
+async def test_register_duplicate_email_conflicts(client):
+    payload = {"name": "Dup", "email": "dup@test.com", "password": "Senha@123"}
+    first = await client.post(REGISTER, json=payload)
+    assert first.status_code == 201
+
+    second = await client.post(REGISTER, json=payload)
+    assert second.status_code == 409
+
+
+async def test_register_then_login_works(client):
+    await client.post(
+        REGISTER,
+        json={"name": "Flow", "email": "flow@test.com", "password": "Senha@123"},
+    )
+    client.cookies.clear()
+
+    resp = await client.post(
+        LOGIN, json={"email": "flow@test.com", "password": "Senha@123"}
+    )
+    assert resp.status_code == 200
 
 
 async def test_login_sets_cookies_and_me_returns_user(client, user_factory):

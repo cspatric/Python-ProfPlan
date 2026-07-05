@@ -9,11 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import (
     create_access_token,
     create_refresh_token,
+    hash_password,
     hash_token,
     verify_password,
 )
 from app.modules.auth.application.dto import IssuedTokens
 from app.modules.auth.domain.exceptions import (
+    EmailAlreadyRegisteredError,
     InvalidCredentialsError,
     InvalidTokenError,
     RateLimitedError,
@@ -47,6 +49,33 @@ class AuthService:
         self._refresh_tokens = refresh_tokens
         self._auth_logs = auth_logs
         self._rate_limiter = rate_limiter
+
+    async def register(
+        self,
+        *,
+        name: str,
+        email: str,
+        password: str,
+        ip_address: str | None,
+        user_agent: str | None,
+    ) -> IssuedTokens:
+        """Create a new account and sign the user in (issues auth tokens)."""
+        if await self._users.get_by_email(email) is not None:
+            raise EmailAlreadyRegisteredError
+
+        user = await self._users.create(
+            name=name, email=email, password_hash=hash_password(password)
+        )
+        tokens = await self._issue_tokens(user, ip_address, user_agent)
+        await self._auth_logs.record(
+            event=AuthEvent.LOGIN_SUCCESS,
+            user_id=user.uuid,
+            email=user.email,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        await self._session.commit()
+        return tokens
 
     async def login(
         self,

@@ -31,13 +31,41 @@
       "value": "Senha@123",
       "type": "string"
     },
-    { "key": "subject_id", "value": "", "type": "string" },
-    { "key": "plan_id", "value": "", "type": "string" },
-    { "key": "module_id", "value": "", "type": "string" },
-    { "key": "academic_item_id", "value": "", "type": "string" },
-    { "key": "category_id", "value": "", "type": "string" },
-    { "key": "category_type_id", "value": "", "type": "string" },
-    { "key": "document_id", "value": "", "type": "string" }
+    {
+      "key": "subject_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "plan_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "module_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "academic_item_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "category_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "category_type_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "document_id",
+      "value": "",
+      "type": "string"
+    }
   ],
   "item": [
     {
@@ -45,14 +73,44 @@
       "request": {
         "method": "GET",
         "header": [
-          { "key": "Host", "value": "{{hostHeader}}" }
+          {
+            "key": "Host",
+            "value": "{{hostHeader}}"
+          }
         ],
         "url": {
           "raw": "{{baseUrl}}/health",
-          "host": ["{{baseUrl}}"],
-          "path": ["health"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
         },
         "description": "Liveness/readiness probe (no auth)."
+      },
+      "response": []
+    },
+    {
+      "name": "Ready",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Host",
+            "value": "{{hostHeader}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/ready",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "ready"
+          ]
+        },
+        "description": "Readiness probe: checks database + Redis. 200 ready / 503 degraded."
       },
       "response": []
     },
@@ -60,12 +118,50 @@
       "name": "Auth",
       "item": [
         {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New User\",\n  \"email\": \"new.user@profplan.com\",\n  \"password\": \"Senha@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/auth/register",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Create a new account and sign in (sets HttpOnly cookies). 409 if the email already exists."
+          },
+          "response": []
+        },
+        {
           "name": "Login",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -73,8 +169,13 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/auth/login",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["auth", "login"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
             },
             "description": "Authenticate with email/password. Sets HttpOnly `access_token` and `refresh_token` cookies."
           },
@@ -85,12 +186,20 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/auth/refresh",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["auth", "refresh"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
             },
             "description": "Rotate the refresh token (reads the refresh cookie) and re-issue both cookies."
           },
@@ -101,12 +210,20 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/auth/me",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["auth", "me"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
             },
             "description": "Return the currently authenticated user (reads the access cookie)."
           },
@@ -117,12 +234,20 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/auth/logout",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["auth", "logout"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
             },
             "description": "Revoke the current session and clear the auth cookies."
           },
@@ -133,12 +258,20 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/auth/logout-all",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["auth", "logout-all"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "auth",
+                "logout-all"
+              ]
             },
             "description": "Revoke every session of the authenticated user (requires a valid access cookie)."
           },
@@ -169,8 +302,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -178,8 +317,12 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/subjects",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["subjects"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "subjects"
+              ]
             }
           },
           "response": []
@@ -188,14 +331,29 @@
           "name": "List Subjects",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/subjects?limit=50&offset=0",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["subjects"],
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "subjects"
+              ],
               "query": [
-                { "key": "limit", "value": "50" },
-                { "key": "offset", "value": "0" }
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
               ]
             }
           },
@@ -205,11 +363,21 @@
           "name": "Get Subject",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/subjects/{{subject_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["subjects", "{{subject_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "subjects",
+                "{{subject_id}}"
+              ]
             }
           },
           "response": []
@@ -219,8 +387,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -228,8 +402,13 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/subjects/{{subject_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["subjects", "{{subject_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "subjects",
+                "{{subject_id}}"
+              ]
             }
           },
           "response": []
@@ -238,11 +417,21 @@
           "name": "Delete Subject",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/subjects/{{subject_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["subjects", "{{subject_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "subjects",
+                "{{subject_id}}"
+              ]
             }
           },
           "response": []
@@ -271,8 +460,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -280,8 +475,12 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/plans",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["plans"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "plans"
+              ]
             }
           },
           "response": []
@@ -290,14 +489,29 @@
           "name": "List Plans",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/plans?limit=50&offset=0",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["plans"],
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "plans"
+              ],
               "query": [
-                { "key": "limit", "value": "50" },
-                { "key": "offset", "value": "0" }
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
               ]
             }
           },
@@ -307,11 +521,21 @@
           "name": "Get Plan",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/plans/{{plan_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["plans", "{{plan_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "plans",
+                "{{plan_id}}"
+              ]
             }
           },
           "response": []
@@ -321,8 +545,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -330,8 +560,13 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/plans/{{plan_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["plans", "{{plan_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "plans",
+                "{{plan_id}}"
+              ]
             }
           },
           "response": []
@@ -340,11 +575,21 @@
           "name": "Delete Plan",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/plans/{{plan_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["plans", "{{plan_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "plans",
+                "{{plan_id}}"
+              ]
             }
           },
           "response": []
@@ -373,8 +618,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -382,8 +633,12 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/modules",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["modules"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "modules"
+              ]
             }
           },
           "response": []
@@ -392,15 +647,33 @@
           "name": "List Modules (by plan)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/modules?plan_id={{plan_id}}&limit=50&offset=0",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["modules"],
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "modules"
+              ],
               "query": [
-                { "key": "plan_id", "value": "{{plan_id}}" },
-                { "key": "limit", "value": "50" },
-                { "key": "offset", "value": "0" }
+                {
+                  "key": "plan_id",
+                  "value": "{{plan_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
               ]
             }
           },
@@ -410,11 +683,21 @@
           "name": "Get Module",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/modules/{{module_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["modules", "{{module_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "modules",
+                "{{module_id}}"
+              ]
             }
           },
           "response": []
@@ -424,8 +707,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -433,8 +722,13 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/modules/{{module_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["modules", "{{module_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "modules",
+                "{{module_id}}"
+              ]
             }
           },
           "response": []
@@ -443,11 +737,21 @@
           "name": "Delete Module",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/modules/{{module_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["modules", "{{module_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "modules",
+                "{{module_id}}"
+              ]
             }
           },
           "response": []
@@ -476,8 +780,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -485,8 +795,12 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-items",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-items"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-items"
+              ]
             }
           },
           "response": []
@@ -495,15 +809,33 @@
           "name": "List Academic Items (by module)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-items?module_id={{module_id}}&limit=50&offset=0",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-items"],
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-items"
+              ],
               "query": [
-                { "key": "module_id", "value": "{{module_id}}" },
-                { "key": "limit", "value": "50" },
-                { "key": "offset", "value": "0" }
+                {
+                  "key": "module_id",
+                  "value": "{{module_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
               ]
             }
           },
@@ -513,11 +845,21 @@
           "name": "Get Academic Item",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-items/{{academic_item_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-items", "{{academic_item_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-items",
+                "{{academic_item_id}}"
+              ]
             }
           },
           "response": []
@@ -527,8 +869,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -536,8 +884,13 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-items/{{academic_item_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-items", "{{academic_item_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-items",
+                "{{academic_item_id}}"
+              ]
             }
           },
           "response": []
@@ -546,11 +899,21 @@
           "name": "Delete Academic Item",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-items/{{academic_item_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-items", "{{academic_item_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-items",
+                "{{academic_item_id}}"
+              ]
             }
           },
           "response": []
@@ -579,8 +942,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -588,8 +957,12 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-categories",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-item-categories"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-item-categories"
+              ]
             }
           },
           "response": []
@@ -598,11 +971,20 @@
           "name": "List Categories",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-categories",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-item-categories"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-item-categories"
+              ]
             }
           },
           "response": []
@@ -611,11 +993,21 @@
           "name": "Get Category",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-categories/{{category_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-item-categories", "{{category_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-item-categories",
+                "{{category_id}}"
+              ]
             }
           },
           "response": []
@@ -625,8 +1017,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -634,8 +1032,13 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-categories/{{category_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-item-categories", "{{category_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-item-categories",
+                "{{category_id}}"
+              ]
             }
           },
           "response": []
@@ -644,11 +1047,21 @@
           "name": "Delete Category",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-categories/{{category_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-item-categories", "{{category_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-item-categories",
+                "{{category_id}}"
+              ]
             }
           },
           "response": []
@@ -677,8 +1090,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -686,8 +1105,12 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-category-types",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-item-category-types"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-item-category-types"
+              ]
             }
           },
           "response": []
@@ -696,12 +1119,26 @@
           "name": "List Category Types (by category)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-category-types?category_id={{category_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-item-category-types"],
-              "query": [{ "key": "category_id", "value": "{{category_id}}" }]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-item-category-types"
+              ],
+              "query": [
+                {
+                  "key": "category_id",
+                  "value": "{{category_id}}"
+                }
+              ]
             }
           },
           "response": []
@@ -710,11 +1147,21 @@
           "name": "Get Category Type",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-category-types/{{category_type_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-item-category-types", "{{category_type_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-item-category-types",
+                "{{category_type_id}}"
+              ]
             }
           },
           "response": []
@@ -724,8 +1171,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -733,8 +1186,13 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-category-types/{{category_type_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-item-category-types", "{{category_type_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-item-category-types",
+                "{{category_type_id}}"
+              ]
             }
           },
           "response": []
@@ -743,11 +1201,21 @@
           "name": "Delete Category Type",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/academic-item-category-types/{{category_type_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["academic-item-category-types", "{{category_type_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-item-category-types",
+                "{{category_type_id}}"
+              ]
             }
           },
           "response": []
@@ -775,19 +1243,40 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "body": {
               "mode": "formdata",
               "formdata": [
-                { "key": "subject_id", "value": "{{subject_id}}", "type": "text" },
-                { "key": "title", "value": "My document", "type": "text" },
-                { "key": "file", "type": "file", "src": [] }
+                {
+                  "key": "subject_id",
+                  "value": "{{subject_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "title",
+                  "value": "My document",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
               ]
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/documents",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["documents"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "documents"
+              ]
             }
           },
           "response": []
@@ -796,12 +1285,26 @@
           "name": "List Documents (by subject)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/documents?subject_id={{subject_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["documents"],
-              "query": [{ "key": "subject_id", "value": "{{subject_id}}" }]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "documents"
+              ],
+              "query": [
+                {
+                  "key": "subject_id",
+                  "value": "{{subject_id}}"
+                }
+              ]
             }
           },
           "response": []
@@ -810,11 +1313,21 @@
           "name": "Get Document",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/documents/{{document_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["documents", "{{document_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "documents",
+                "{{document_id}}"
+              ]
             }
           },
           "response": []
@@ -823,11 +1336,22 @@
           "name": "Get Document Status",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/documents/{{document_id}}/status",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["documents", "{{document_id}}", "status"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "documents",
+                "{{document_id}}",
+                "status"
+              ]
             }
           },
           "response": []
@@ -836,11 +1360,21 @@
           "name": "Delete Document",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Host", "value": "{{hostHeader}}" }],
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/documents/{{document_id}}",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["documents", "{{document_id}}"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "documents",
+                "{{document_id}}"
+              ]
             }
           },
           "response": []
@@ -856,8 +1390,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Host", "value": "{{hostHeader}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -865,13 +1405,115 @@
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/rag/query",
-              "host": ["{{baseUrl}}{{apiPrefix}}"],
-              "path": ["rag", "query"]
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "rag",
+                "query"
+              ]
             }
           },
           "response": []
         }
       ]
+    },
+    {
+      "name": "AI",
+      "item": [
+        {
+          "name": "Ask",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Explain photosynthesis in one sentence.\",\n  \"limit\": 5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/ai/ask",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "ai",
+                "ask"
+              ]
+            },
+            "description": "RAG answer over the user's documents via the LLM gateway (Claude -> OpenAI -> Ollama). Optional: add \"subject_id\": \"<uuid>\" to scope retrieval. Requires auth."
+          },
+          "response": []
+        }
+      ],
+      "description": "AI question answering (retrieval-augmented generation)."
+    },
+    {
+      "name": "Audit",
+      "item": [
+        {
+          "name": "List Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/audit-logs?limit=50&offset=0",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "entity",
+                  "value": "subject",
+                  "disabled": true
+                },
+                {
+                  "key": "entity_id",
+                  "value": "{{subject_id}}",
+                  "disabled": true
+                },
+                {
+                  "key": "actor_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "UPDATE",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Business audit trail (admin only). Filter by entity, entity_id, actor_id, action. Enable the disabled query params as needed."
+          },
+          "response": []
+        }
+      ],
+      "description": "Audit trail of business actions (create/update/delete). Admin only."
     }
   ]
 }

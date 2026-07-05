@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.modules.users.domain.entities import UserRole, UserStatus
 
@@ -13,6 +13,14 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str
+
+
+class RegisterRequest(BaseModel):
+    """Payload to create a new account."""
+
+    name: str = Field(min_length=1, max_length=255)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
 
 
 class UserResponse(BaseModel):
