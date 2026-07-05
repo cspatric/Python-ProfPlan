@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, homologation]
+  pull_request:
+
+jobs:
+  quality:
+    name: Lint + unit tests
+    runs-on: ubuntu-latest
+    env:
+      # Dummy values so Settings() loads at import; unit tests open no connections.
+      DATABASE_URL: postgresql+asyncpg://profplan:profplan@localhost:5432/profplan
+      REDIS_URL: redis://localhost:6379/0
+      JWT_ACCESS_SECRET: ci-access-secret
+      JWT_REFRESH_SECRET: ci-refresh-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen --extra dev
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Ruff format check
+        run: uv run ruff format --check .
+      - name: Unit tests
+        run: uv run pytest -m "not integration"
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: profplan
+          POSTGRES_PASSWORD: profplan
+          POSTGRES_DB: profplan
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U profplan"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://profplan:profplan@localhost:5432/profplan_test
+      REDIS_URL: redis://localhost:6379/15
+      JWT_ACCESS_SECRET: ci-access-secret
+      JWT_REFRESH_SECRET: ci-refresh-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen --extra dev
+      - name: Integration tests
+        run: uv run pytest -m integration tests/integration
