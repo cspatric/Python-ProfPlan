@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-5"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
-    ollama_chat_model: str = "llama3.1"
+    ollama_chat_model: str = "llama3.2:3b"
     llm_max_tokens: int = 2048
     llm_timeout_seconds: float = 60.0
     llm_circuit_failure_threshold: int = 3
