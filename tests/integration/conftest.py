@@ -166,9 +166,26 @@ async def module_id(auth_client, plan_id) -> str:
 
 
 @pytest_asyncio.fixture
-async def category_id(auth_client) -> str:
-    """Create an academic item category and return its id."""
-    resp = await auth_client.post(
+async def admin_client(client, user_factory):
+    """An HTTP client authenticated as an admin user."""
+    from app.modules.users.domain.entities import UserRole
+
+    await user_factory(email="admin@test.com")
+    async with SessionFactory() as session:
+        user = await UserRepository(session).get_by_email("admin@test.com")
+        user.role = UserRole.ADMIN
+        await session.commit()
+    await client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin@test.com", "password": "Senha@123"},
+    )
+    return client
+
+
+@pytest_asyncio.fixture
+async def category_id(admin_client) -> str:
+    """Create an academic item category (admin) and return its id."""
+    resp = await admin_client.post(
         "/api/v1/academic-item-categories", json={"name": "Evaluations"}
     )
     return resp.json()["uuid"]

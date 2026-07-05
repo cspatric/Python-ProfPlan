@@ -18,8 +18,10 @@ from app.modules.auth.infrastructure.repository import (
     AuthLogRepository,
     RefreshTokenRepository,
 )
+from app.modules.users.domain.entities import UserRole
 from app.modules.users.infrastructure.models import User
 from app.modules.users.infrastructure.repository import UserRepository
+from app.shared.exceptions.base import ForbiddenError
 
 _settings = get_settings()
 
@@ -68,4 +70,16 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_current_admin(
+    user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """Require the authenticated user to have the admin role."""
+    if user.role != UserRole.ADMIN:
+        raise ForbiddenError("Admin privileges required")
+    return user
+
+
+CurrentAdmin = Annotated[User, Depends(get_current_admin)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]

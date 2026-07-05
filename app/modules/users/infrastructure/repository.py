@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.users.domain.entities import UserStatus
+from app.modules.users.domain.entities import UserRole, UserStatus
 from app.modules.users.infrastructure.models import User
 
 
@@ -34,13 +34,21 @@ class UserRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create(self, *, name: str, email: str, password_hash: str) -> User:
+    async def create(
+        self,
+        *,
+        name: str,
+        email: str,
+        password_hash: str,
+        role: UserRole = UserRole.USER,
+    ) -> User:
         """Persist a new user."""
         user = User(
             name=name,
             email=email.lower(),
             password_hash=password_hash,
             status=UserStatus.ACTIVE,
+            role=role,
         )
         self._session.add(user)
         await self._session.flush()

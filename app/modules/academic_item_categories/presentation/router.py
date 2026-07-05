@@ -17,7 +17,7 @@ from app.modules.academic_item_categories.presentation.schemas import (
     CategoryTypeUpdate,
     CategoryUpdate,
 )
-from app.modules.auth.presentation.dependencies import CurrentUser
+from app.modules.auth.presentation.dependencies import CurrentAdmin, CurrentUser
 
 categories_router = APIRouter(
     prefix="/academic-item-categories", tags=["academic-item-categories"]
@@ -35,9 +35,9 @@ types_router = APIRouter(
     "", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED
 )
 async def create_category(
-    payload: CategoryCreate, user: CurrentUser, service: CategoryServiceDep
+    payload: CategoryCreate, user: CurrentAdmin, service: CategoryServiceDep
 ) -> CategoryResponse:
-    """Create a category."""
+    """Create a category (admin only)."""
     category = await service.create(data=payload.model_dump())
     return CategoryResponse.model_validate(category)
 
@@ -67,10 +67,10 @@ async def get_category(
 async def update_category(
     category_id: UUID,
     payload: CategoryUpdate,
-    user: CurrentUser,
+    user: CurrentAdmin,
     service: CategoryServiceDep,
 ) -> CategoryResponse:
-    """Update a category."""
+    """Update a category (admin only)."""
     category = await service.update(
         category_id=category_id, data=payload.model_dump(exclude_unset=True)
     )
@@ -79,9 +79,9 @@ async def update_category(
 
 @categories_router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_category(
-    category_id: UUID, user: CurrentUser, service: CategoryServiceDep
+    category_id: UUID, user: CurrentAdmin, service: CategoryServiceDep
 ) -> None:
-    """Delete a category."""
+    """Delete a category (admin only)."""
     await service.delete(category_id=category_id)
 
 
@@ -93,10 +93,10 @@ async def delete_category(
 )
 async def create_category_type(
     payload: CategoryTypeCreate,
-    user: CurrentUser,
+    user: CurrentAdmin,
     service: CategoryTypeServiceDep,
 ) -> CategoryTypeResponse:
-    """Create a category type under an existing category."""
+    """Create a category type under an existing category (admin only)."""
     category_type = await service.create(data=payload.model_dump())
     return CategoryTypeResponse.model_validate(category_type)
 
@@ -127,10 +127,10 @@ async def get_category_type(
 async def update_category_type(
     type_id: UUID,
     payload: CategoryTypeUpdate,
-    user: CurrentUser,
+    user: CurrentAdmin,
     service: CategoryTypeServiceDep,
 ) -> CategoryTypeResponse:
-    """Update a category type."""
+    """Update a category type (admin only)."""
     category_type = await service.update(
         type_id=type_id, data=payload.model_dump(exclude_unset=True)
     )
@@ -139,7 +139,7 @@ async def update_category_type(
 
 @types_router.delete("/{type_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_category_type(
-    type_id: UUID, user: CurrentUser, service: CategoryTypeServiceDep
+    type_id: UUID, user: CurrentAdmin, service: CategoryTypeServiceDep
 ) -> None:
-    """Delete a category type."""
+    """Delete a category type (admin only)."""
     await service.delete(type_id=type_id)

@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base
-from app.modules.users.domain.entities import UserStatus
+from app.modules.users.domain.entities import UserRole, UserStatus
 
 
 class User(Base):
@@ -29,6 +29,13 @@ class User(Base):
         Enum(UserStatus, name="user_status"),
         nullable=False,
         default=UserStatus.ACTIVE,
+    )
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, name="user_role"),
+        nullable=False,
+        default=UserRole.USER,
+        # SQLAlchemy stores the enum NAME, so the server default is "USER".
+        server_default=UserRole.USER.name,
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

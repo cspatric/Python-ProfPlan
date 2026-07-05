@@ -48,6 +48,13 @@ class UnauthorizedError(AppError):
     detail = "Not authenticated"
 
 
+class ForbiddenError(AppError):
+    """The authenticated user lacks permission for this action."""
+
+    status_code = status.HTTP_403_FORBIDDEN
+    detail = "Not allowed"
+
+
 class RateLimitError(AppError):
     """Too many requests in the given window."""
 

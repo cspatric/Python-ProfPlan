@@ -10,3 +10,10 @@ class UserStatus(StrEnum):
     INACTIVE = "inactive"
     SUSPENDED = "suspended"
     PENDING = "pending"
+
+
+class UserRole(StrEnum):
+    """Authorization role of a user."""
+
+    USER = "user"
+    ADMIN = "admin"

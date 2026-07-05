@@ -5,7 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
-from app.modules.users.domain.entities import UserStatus
+from app.modules.users.domain.entities import UserRole, UserStatus
 
 
 class LoginRequest(BaseModel):
@@ -25,6 +25,7 @@ class UserResponse(BaseModel):
     email: EmailStr
     profile_picture: str | None
     status: UserStatus
+    role: UserRole
     last_login_at: datetime | None
 
 
