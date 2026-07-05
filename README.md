@@ -192,6 +192,17 @@ authenticated user and every query is scoped to that user.
 | Academic item category types | `/api/v1/academic-item-category-types` | Global catalog, full CRUD; `academic_item_category_id` must exist; list filterable by `category_id` |
 | Documents | `/api/v1/documents` | Multipart **upload** (202) → stored in MinIO + queued for async ingestion; list (`?subject_id`), get, `GET /{id}/status` (pending/processed), soft delete |
 | RAG query | `/api/v1/rag/query` | Embed a question and retrieve the most relevant chunks (cosine), scoped to the user's documents |
+| AI | `/api/v1/ai/ask` | RAG-augmented answer: retrieves context, then generates via the LLM gateway |
+
+### AI generation (LLM gateway)
+
+`POST /api/v1/ai/ask` retrieves the user's most relevant chunks and asks an LLM
+to answer using that context. The **LLM gateway** tries providers in a fallback
+chain — **Claude → OpenAI → Ollama (local)** — each guarded by a retry policy and
+a circuit breaker: a provider that is unavailable (no API key) or failing is
+skipped and the next one is tried. Configure keys/models via `ANTHROPIC_*`,
+`OPENAI_*` and `OLLAMA_CHAT_MODEL` in `.env` (Ollama needs no key and is the
+final fallback).
 
 ### Document ingestion (RAG)
 
