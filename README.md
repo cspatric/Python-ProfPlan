@@ -214,16 +214,27 @@ authenticated user and every query is scoped to that user.
 | Documents | `/api/v1/documents` | Multipart **upload** (202) → stored in MinIO + queued for async ingestion; list (`?subject_id`), get, `GET /{id}/status` (pending/processed), soft delete |
 | RAG query | `/api/v1/rag/query` | Embed a question and retrieve the most relevant chunks (cosine), scoped to the user's documents |
 | AI | `/api/v1/ai/ask` | RAG-augmented answer: retrieves context, then generates via the LLM gateway |
+| AI providers | `/api/v1/ai/health` · `PATCH /api/v1/ai/providers/{name}` | Provider status (configured/enabled/active/circuit) and runtime enable/disable (admin) |
 
 ### AI generation (LLM gateway)
 
 `POST /api/v1/ai/ask` retrieves the user's most relevant chunks and asks an LLM
 to answer using that context. The **LLM gateway** tries providers in a fallback
-chain — **Claude → OpenAI → Ollama (local)** — each guarded by a retry policy and
-a circuit breaker: a provider that is unavailable (no API key) or failing is
-skipped and the next one is tried. Configure keys/models via `ANTHROPIC_*`,
-`OPENAI_*` and `OLLAMA_CHAT_MODEL` in `.env` (Ollama needs no key and is the
-final fallback).
+chain — **Claude → OpenAI → Gemini → Ollama (local)** — each guarded by a retry
+policy and a circuit breaker: a provider that is unavailable (no API key) or
+failing is skipped and the next one is tried. Configure keys/models via
+`ANTHROPIC_*`, `OPENAI_*`, `GEMINI_*` and `OLLAMA_CHAT_MODEL` in `.env` (Ollama
+needs no key and is the final fallback).
+
+Providers can be inspected and toggled at runtime: `GET /api/v1/ai/health`
+reports each provider's status, and `PATCH /api/v1/ai/providers/{name}`
+(admin) enables/disables one. Two invariants are enforced: Ollama (the offline
+fallback) can never be disabled, and at least one provider besides Ollama must
+stay active. The on/off state lives in the **`ai_provider` table** (the durable
+source of truth) and every toggle is written to the audit trail. **API keys are
+deliberately NOT stored in the database** — they stay in the environment
+(12-factor); encrypting them in the DB would only move the secret problem to
+wherever the encryption key lives.
 
 ### Document ingestion (RAG)
 

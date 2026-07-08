@@ -14,6 +14,7 @@ class OllamaProvider(HTTPLLMProvider):
         super().__init__(timeout=settings.llm_timeout_seconds)
         self._base_url = settings.ollama_base_url
         self._model = settings.ollama_chat_model
+        self._max_tokens = settings.llm_max_tokens
 
     async def generate(self, prompt: str, *, system: str | None = None) -> str:
         data = await self._post(
@@ -23,6 +24,9 @@ class OllamaProvider(HTTPLLMProvider):
                 "model": self._model,
                 "messages": self._messages(prompt, system),
                 "stream": False,
+                # Bound the output (num_predict) and lower temperature so JSON
+                # planning is faster and more deterministic on the local model.
+                "options": {"num_predict": self._max_tokens, "temperature": 0.2},
             },
         )
         return data["message"]["content"]

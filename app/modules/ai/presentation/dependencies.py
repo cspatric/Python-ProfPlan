@@ -5,9 +5,13 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.infrastructure.database.session import get_session
+from app.modules.ai.application.providers_service import AiProvidersService
 from app.modules.ai.application.service import AiService
 from app.modules.ai.infrastructure.gateway.llm_gateway import get_gateway
+from app.modules.ai.infrastructure.repository import AiProviderRepository
+from app.modules.audit.presentation.dependencies import AuditRecorderDep
 from app.modules.documents.infrastructure.repository import (
     DocumentContentRepository,
 )
@@ -26,7 +30,24 @@ def get_ai_service(
         SearchService(ChunkRepository(session)),
         DocumentContentRepository(session),
     )
-    return AiService(get_gateway(), retrieval)
+    return AiService(get_gateway(), retrieval, AiProviderRepository(session))
 
 
 AiServiceDep = Annotated[AiService, Depends(get_ai_service)]
+
+
+def get_ai_providers_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: AuditRecorderDep,
+) -> AiProvidersService:
+    """Build the AiProvidersService (gateway + ai_provider table + audit)."""
+    return AiProvidersService(
+        session,
+        get_gateway(),
+        AiProviderRepository(session),
+        get_settings(),
+        audit,
+    )
+
+
+AiProvidersServiceDep = Annotated[AiProvidersService, Depends(get_ai_providers_service)]

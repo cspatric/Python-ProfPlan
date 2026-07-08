@@ -8,6 +8,7 @@ from app.modules.ai.domain.prompts import (
     build_rag_prompt,
 )
 from app.modules.ai.infrastructure.gateway.llm_gateway import LLMGateway
+from app.modules.ai.infrastructure.repository import AiProviderRepository
 from app.modules.rag.application.retrieval_service import RetrievalService
 
 
@@ -23,9 +24,15 @@ class AiAnswer:
 class AiService:
     """Retrieval-augmented generation over the user's documents."""
 
-    def __init__(self, gateway: LLMGateway, retrieval: RetrievalService) -> None:
+    def __init__(
+        self,
+        gateway: LLMGateway,
+        retrieval: RetrievalService,
+        providers: AiProviderRepository,
+    ) -> None:
         self._gateway = gateway
         self._retrieval = retrieval
+        self._providers = providers
 
     async def answer(
         self,
@@ -42,8 +49,11 @@ class AiService:
         context = "\n\n".join(
             f"[{i + 1}] {chunk.content}" for i, chunk in enumerate(chunks)
         )
+        disabled = await self._providers.disabled_names()
         result = await self._gateway.generate(
-            build_rag_prompt(query, context), system=ASSISTANT_SYSTEM_PROMPT
+            build_rag_prompt(query, context),
+            system=ASSISTANT_SYSTEM_PROMPT,
+            disabled=disabled,
         )
         return AiAnswer(
             answer=result.text,

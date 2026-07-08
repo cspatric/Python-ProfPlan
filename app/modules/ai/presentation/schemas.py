@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AiAskRequest(BaseModel):
@@ -19,3 +19,28 @@ class AiAnswerResponse(BaseModel):
     answer: str
     provider: str
     sources: list[UUID]
+
+
+class ProviderStatusResponse(BaseModel):
+    """Runtime status of a single LLM provider."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    order: int
+    configured: bool
+    enabled: bool
+    active: bool
+    circuit_open: bool
+
+
+class AiHealthResponse(BaseModel):
+    """The fallback chain and each provider's status."""
+
+    providers: list[ProviderStatusResponse]
+
+
+class ProviderToggleRequest(BaseModel):
+    """Turn a provider on or off."""
+
+    enabled: bool

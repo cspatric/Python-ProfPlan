@@ -1452,6 +1452,63 @@
             "description": "RAG answer over the user's documents via the LLM gateway (Claude -> OpenAI -> Ollama). Optional: add \"subject_id\": \"<uuid>\" to scope retrieval. Requires auth."
           },
           "response": []
+        },
+        {
+          "name": "AI Health",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/ai/health",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "ai",
+                "health"
+              ]
+            },
+            "description": "LLM providers in fallback order with configured/enabled/active/circuit_open status. Requires auth."
+          },
+          "response": []
+        },
+        {
+          "name": "Toggle Provider",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/ai/providers/gemini",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "ai",
+                "providers",
+                "gemini"
+              ]
+            },
+            "description": "Enable/disable a provider (admin). Ollama cannot be disabled; at least one provider besides Ollama must stay active (409 otherwise)."
+          },
+          "response": []
         }
       ],
       "description": "AI question answering (retrieval-augmented generation)."

@@ -56,11 +56,13 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://ollama:11434"
     embedding_model: str = "bge-m3"
 
-    # LLM gateway (fallback chain: Claude -> OpenAI -> Ollama)
+    # LLM gateway (fallback chain: Claude -> OpenAI -> Gemini -> Ollama)
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-5"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     ollama_chat_model: str = "llama3.2:3b"
     llm_max_tokens: int = 2048
     llm_timeout_seconds: float = 60.0

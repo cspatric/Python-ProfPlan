@@ -1,10 +1,22 @@
 """AI domain exceptions."""
 
-from app.shared.exceptions.base import AppError
+from app.shared.exceptions.base import AppError, ConflictError, NotFoundError
 
 
 class ProviderUnavailableError(Exception):
     """Internal: a provider cannot serve the request (skip to the next)."""
+
+
+class UnknownProviderError(NotFoundError):
+    """Raised when toggling a provider that does not exist."""
+
+    detail = "Unknown AI provider"
+
+
+class ProviderToggleError(ConflictError):
+    """Raised when a toggle would break the required provider invariants."""
+
+    detail = "Invalid provider toggle"
 
 
 class AllProvidersFailedError(AppError):

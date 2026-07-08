@@ -23,6 +23,14 @@ class CircuitBreaker:
         # Half-open: after the cooldown, allow a single trial.
         return (time.monotonic() - self._opened_at) >= self._reset_seconds
 
+    @property
+    def is_open(self) -> bool:
+        """True while the breaker is open (calls skipped), without mutating."""
+        return (
+            self._opened_at is not None
+            and (time.monotonic() - self._opened_at) < self._reset_seconds
+        )
+
     def record_success(self) -> None:
         self._failures = 0
         self._opened_at = None
