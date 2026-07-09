@@ -4,10 +4,14 @@ from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
 
 from app.api.exceptions import register_exception_handlers
 from app.api.middleware import RequestLoggingMiddleware
+from app.api.rate_limit import limiter
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.infrastructure.database.session import engine
@@ -23,6 +27,13 @@ setup_logging(settings.log_level)
 
 app = FastAPI(title="ProfPlan API")
 register_exception_handlers(app)
+
+# Per-IP rate limiting (slowapi + Redis). The global default limit is enforced by
+# SlowAPIMiddleware on every route; a 429 is returned when a client floods the
+# API. Added before the logging middleware so rejected requests are still logged.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # One structured log line per HTTP request (method, user, status, latency, ...).
 app.add_middleware(RequestLoggingMiddleware)
@@ -53,12 +64,14 @@ app.include_router(api_router, prefix=settings.api_prefix)
 
 
 @app.get("/health")
+@limiter.exempt
 def health() -> dict[str, str]:
     """Liveness probe (is the process up?) used by the container healthcheck."""
     return {"status": "ok"}
 
 
 @app.get("/ready")
+@limiter.exempt
 async def ready(response: Response) -> dict[str, object]:
     """Readiness probe: verifies the database and Redis are reachable."""
     checks: dict[str, str] = {}

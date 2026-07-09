@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Request, Response, status
 
+from app.api.rate_limit import auth_limit
 from app.core.config import get_settings
 from app.modules.auth.application.dto import IssuedTokens
 from app.modules.auth.presentation.dependencies import (
@@ -59,6 +60,7 @@ def _clear_auth_cookies(response: Response) -> None:
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@auth_limit
 async def register(
     payload: RegisterRequest,
     request: Request,
@@ -81,6 +83,7 @@ async def register(
 
 
 @router.post("/login", response_model=UserResponse)
+@auth_limit
 async def login(
     payload: LoginRequest,
     request: Request,

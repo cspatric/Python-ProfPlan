@@ -272,6 +272,37 @@ development-only concern:
 The browser sends the HttpOnly auth cookies automatically; there is no
 `Authorization: Bearer` header and no token in `localStorage`.
 
+## Rate limiting
+
+Two independent layers protect the API from abuse:
+
+1. **Per-account login lockout** (`LoginRateLimiter`, Redis) — after
+   `LOGIN_RATE_LIMIT_MAX_ATTEMPTS` failed logins the account is blocked for a
+   window. Defends a targeted credential-stuffing attempt on one account.
+2. **Per-IP request limiting** (`slowapi` + Redis, `app/api/rate_limit.py`) — a
+   global default applies to **every** route, with stricter limits on sensitive
+   ones. Defends the whole API from a single client flooding it (DoS). Counters
+   live in Redis (db 3), so the limit holds across API replicas, not per-process.
+
+| Scope | Default | Env var |
+|-------|---------|---------|
+| Every route | `120/minute` | `RATE_LIMIT_DEFAULT` |
+| Auth (`/auth/login`, `/auth/register`) | `10/minute` | `RATE_LIMIT_AUTH` |
+| Expensive (`/ai/ask`, `POST /plans`, upload) | `20/minute` | `RATE_LIMIT_EXPENSIVE` |
+
+Over-limit requests get `429` with `X-RateLimit-*`/`Retry-After` headers. The
+real client IP is taken from Traefik's `X-Forwarded-For`. Liveness/readiness
+probes are exempt. Toggle the whole layer with `RATE_LIMIT_ENABLED` (off under
+test). Covered by `app/api/tests/test_rate_limit.py`.
+
+## Load / performance testing
+
+`perf/` holds a Locust load test for the **non-AI** paths (HTTP + Postgres +
+Redis + auth + CRUD) — free to run repeatedly. The AI paths are excluded on
+purpose (their ceiling is the LLM provider, not this service). Run against a live
+stack with `perf/run.sh` (`USERS`/`RATE`/`TIME` configurable). A captured
+baseline and the capacity analysis are in `perf/RESULTS.md`.
+
 ## Postman
 
 Import `postman/ProfPlan.postman_collection.json` (and the
@@ -307,6 +338,10 @@ These exercise the full HTTP flow with httpx against a real database:
 - **domain resources** — full CRUD for subjects, plans, modules, academic items
   (JSON content/metadata + soft delete) and category catalogs, plus ownership
   isolation and validation errors (422).
+- **AI providers** — `GET /ai/health` fallback chain, and provider toggle guards
+  (Ollama can't be disabled → 409, unknown → 404, non-admin → 403).
+- **plan creation** — the CI-safe branch (plain plan when generation is disabled)
+  and document-selection validation (unowned document → 404).
 
 They live under `tests/integration/` and are marked `@pytest.mark.integration`
 (the unit run excludes them).

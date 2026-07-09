@@ -1,7 +1,8 @@
 """AI HTTP endpoints."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
+from app.api.rate_limit import expensive_limit
 from app.modules.ai.presentation.dependencies import (
     AiProvidersServiceDep,
     AiServiceDep,
@@ -19,8 +20,12 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 
 
 @router.post("/ask", response_model=AiAnswerResponse)
+@expensive_limit
 async def ask(
-    payload: AiAskRequest, user: CurrentUser, service: AiServiceDep
+    payload: AiAskRequest,
+    request: Request,
+    user: CurrentUser,
+    service: AiServiceDep,
 ) -> AiAnswerResponse:
     """Answer a question grounded on the user's documents (RAG + LLM gateway)."""
     result = await service.answer(

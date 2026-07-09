@@ -3,8 +3,9 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile, status
 
+from app.api.rate_limit import expensive_limit
 from app.infrastructure.celery.tasks.ingest import ingest_document
 from app.modules.auth.presentation.dependencies import CurrentUser
 from app.modules.documents.presentation.dependencies import (
@@ -21,7 +22,9 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_202_ACCEPTED)
+@expensive_limit
 async def upload_document(
+    request: Request,
     user: CurrentUser,
     service: UploadServiceDep,
     subject_id: Annotated[UUID, Form()],
