@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Single image shared by the API and the Celery worker — only the command differs.
-FROM python:3.13-slim AS base
+FROM python:3.14-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
