@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str = "redis://redis:6379/0"
 
+    # API-process DB pool. Deliberate, documented numbers instead of silent
+    # SQLAlchemy defaults, sized with headroom under Postgres' max_connections.
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout: int = 30
+
     # JWT
     jwt_algorithm: str = "HS256"
     jwt_access_secret: str
@@ -41,9 +47,16 @@ class Settings(BaseSettings):
     access_cookie_name: str = "access_token"
     refresh_cookie_name: str = "refresh_token"
 
-    # Login rate limiting (Redis) — per-account failed-attempt lockout.
+    # Login rate limiting (Redis) — checked both per-IP and per-account, so
+    # neither a single attacker IP nor a distributed attack against one
+    # account can brute-force past it.
     login_rate_limit_max_attempts: int = 5
     login_rate_limit_window_seconds: int = 300
+
+    # CSRF (double-submit cookie). The access/refresh cookies are HttpOnly, so
+    # a non-HttpOnly csrf_token cookie is mirrored into a request header by
+    # the frontend; CSRFMiddleware compares the two on unsafe methods.
+    csrf_protection_enabled: bool = True
 
     # Global per-IP rate limiting (slowapi + Redis) — protects every route from
     # request floods/DoS. Disabled in tests. Limits use the slowapi syntax
@@ -91,6 +104,9 @@ class Settings(BaseSettings):
     plan_generation_enabled: bool = True
     llm_circuit_failure_threshold: int = 3
     llm_circuit_reset_seconds: float = 30.0
+    # Caps concurrent outbound calls process-wide so a burst of /ai/ask
+    # requests queues instead of firing unbounded concurrent HTTP chains.
+    llm_max_concurrency: int = 5
     # Cache embeddings in Redis to avoid re-embedding identical text (7 days).
     embedding_cache_ttl_seconds: int = 604800
 

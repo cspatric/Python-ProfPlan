@@ -26,12 +26,36 @@ class FakeProvider:
         return self._text or ""
 
 
-def _breaker() -> CircuitBreaker:
-    return CircuitBreaker(failure_threshold=3, reset_seconds=30)
+class FakeRedis:
+    """A tiny in-memory stand-in for the handful of commands the breaker uses."""
+
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+
+    async def exists(self, key: str) -> int:
+        return int(key in self.values)
+
+    async def incr(self, key: str) -> int:
+        self.values[key] = str(int(self.values.get(key, "0")) + 1)
+        return int(self.values[key])
+
+    async def expire(self, key: str, seconds: int) -> None:
+        pass
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self.values[key] = value
+
+    async def delete(self, *keys: str) -> None:
+        for key in keys:
+            self.values.pop(key, None)
+
+
+def _breaker(name: str = "test") -> CircuitBreaker:
+    return CircuitBreaker(FakeRedis(), name=name, failure_threshold=3, reset_seconds=30)
 
 
 def _gateway(*providers: FakeProvider) -> LLMGateway:
-    return LLMGateway([(p, _breaker()) for p in providers])
+    return LLMGateway([(p, _breaker(p.name)) for p in providers], max_concurrency=5)
 
 
 async def test_uses_first_available_provider() -> None:
@@ -73,10 +97,14 @@ async def test_all_providers_failing_raises() -> None:
 
 async def test_open_circuit_skips_provider() -> None:
     claude = FakeProvider("claude", text="unused")
-    breaker = CircuitBreaker(failure_threshold=1, reset_seconds=60)
-    breaker.record_failure()  # opens the circuit
+    breaker = CircuitBreaker(
+        FakeRedis(), name="claude", failure_threshold=1, reset_seconds=60
+    )
+    await breaker.record_failure()  # opens the circuit
     ollama = FakeProvider("ollama", text="fallback")
-    gateway = LLMGateway([(claude, breaker), (ollama, _breaker())])
+    gateway = LLMGateway(
+        [(claude, breaker), (ollama, _breaker("ollama"))], max_concurrency=5
+    )
 
     result = await gateway.generate("hi")
 

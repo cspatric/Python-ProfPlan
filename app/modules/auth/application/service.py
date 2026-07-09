@@ -85,9 +85,18 @@ class AuthService:
         ip_address: str | None,
         user_agent: str | None,
     ) -> IssuedTokens:
-        """Authenticate a user with email and password."""
-        rl_key = ip_address or "unknown"
-        if await self._rate_limiter.is_blocked(rl_key):
+        """Authenticate a user with email and password.
+
+        Checked both per-IP and per-account: an IP-only limit lets a
+        distributed attacker (many IPs) brute-force one account unthrottled;
+        an account-only limit lets one IP brute-force many accounts. Both
+        keys must clear for a login attempt to proceed.
+        """
+        ip_key = f"ip:{ip_address or 'unknown'}"
+        account_key = f"email:{email.strip().lower()}"
+        if await self._rate_limiter.is_blocked(
+            ip_key
+        ) or await self._rate_limiter.is_blocked(account_key):
             await self._auth_logs.record(
                 event=AuthEvent.LOGIN_RATE_LIMITED,
                 email=email,
@@ -103,7 +112,8 @@ class AuthService:
             or user.status != UserStatus.ACTIVE
             or not verify_password(password, user.password_hash)
         ):
-            await self._rate_limiter.register_failure(rl_key)
+            await self._rate_limiter.register_failure(ip_key)
+            await self._rate_limiter.register_failure(account_key)
             await self._auth_logs.record(
                 event=AuthEvent.LOGIN_FAILED,
                 user_id=user.uuid if user else None,
@@ -114,7 +124,8 @@ class AuthService:
             await self._session.commit()
             raise InvalidCredentialsError
 
-        await self._rate_limiter.reset(rl_key)
+        await self._rate_limiter.reset(ip_key)
+        await self._rate_limiter.reset(account_key)
         await self._users.mark_logged_in(user)
         tokens = await self._issue_tokens(user, ip_address, user_agent)
         await self._auth_logs.record(

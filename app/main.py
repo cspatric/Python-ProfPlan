@@ -12,6 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
 
+from app.api.csrf import CSRFMiddleware
 from app.api.exceptions import register_exception_handlers
 from app.api.middleware import RequestLoggingMiddleware
 from app.api.rate_limit import limiter
@@ -34,9 +35,13 @@ register_exception_handlers(app)
 
 # NB: Starlette runs the LAST-added middleware first (outermost). They are added
 # here inner-to-outer so the effective order is:
-#   SecurityHeaders -> RequestLogging -> SlowAPI (rate limit) -> route
+#   SecurityHeaders -> RequestLogging -> SlowAPI (rate limit) -> CSRF -> route
 # This way security headers decorate every response (including 429s) and the
-# logger records rate-limited requests too.
+# logger records rate-limited requests too. CSRF runs innermost, right before
+# the route, since it only needs the request's own cookies/headers.
+
+# Double-submit-cookie CSRF check on unsafe methods (auth cookies are HttpOnly).
+app.add_middleware(CSRFMiddleware)
 
 # Per-IP rate limiting (slowapi + Redis): a 429 is returned when a client floods.
 app.state.limiter = limiter

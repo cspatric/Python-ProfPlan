@@ -158,7 +158,8 @@ async def test_login_success_issues_tokens_and_logs() -> None:
     assert tokens.access_token and tokens.refresh_token
     assert len(refresh.sessions) == 1
     assert AuthEvent.LOGIN_SUCCESS in logs.events
-    assert limiter.resets == 1
+    # Reset both the per-IP and per-account counters.
+    assert limiter.resets == 2
 
 
 async def test_login_wrong_password_fails_and_counts_attempt() -> None:
@@ -177,7 +178,8 @@ async def test_login_wrong_password_fails_and_counts_attempt() -> None:
         )
 
     assert AuthEvent.LOGIN_FAILED in logs.events
-    assert limiter.failures == 1
+    # Counts both the per-IP and per-account failure.
+    assert limiter.failures == 2
 
 
 async def test_login_unknown_email_fails() -> None:

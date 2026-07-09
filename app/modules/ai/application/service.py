@@ -4,14 +4,22 @@ import logging
 from dataclasses import dataclass
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.modules.ai.domain.prompts import (
     ASSISTANT_SYSTEM_PROMPT,
     build_rag_prompt,
 )
 from app.modules.ai.infrastructure.gateway.llm_gateway import LLMGateway
 from app.modules.ai.infrastructure.repository import AiProviderRepository
+from app.modules.documents.infrastructure.repository import (
+    DocumentContentRepository,
+)
 from app.modules.rag.application.retrieval_service import RetrievalService
+from app.modules.rag.application.search_service import SearchService
 from app.modules.rag.domain.chunk import SearchResult
+from app.modules.rag.domain.interfaces import Embedder
+from app.modules.rag.infrastructure.repository import ChunkRepository
 
 logger = logging.getLogger("app.ai")
 
@@ -26,17 +34,24 @@ class AiAnswer:
 
 
 class AiService:
-    """Retrieval-augmented generation over the user's documents."""
+    """Retrieval-augmented generation over the user's documents.
+
+    Opens its own short-lived DB session for the read-only retrieval phase
+    and closes it *before* calling the LLM gateway — the fallback chain can
+    take up to several minutes (multiple providers, each retried, each with a
+    60s timeout), and holding a pooled connection for that long would let a
+    handful of concurrent requests exhaust the whole API pool.
+    """
 
     def __init__(
         self,
         gateway: LLMGateway,
-        retrieval: RetrievalService,
-        providers: AiProviderRepository,
+        session_factory: async_sessionmaker,
+        embedder: Embedder,
     ) -> None:
         self._gateway = gateway
-        self._retrieval = retrieval
-        self._providers = providers
+        self._session_factory = session_factory
+        self._embedder = embedder
 
     async def answer(
         self,
@@ -52,17 +67,24 @@ class AiService:
         Ollama/bge-m3 is down) the question is still answered, just without
         document grounding — a degraded answer beats a 500.
         """
-        try:
-            chunks = await self._retrieval.query(
-                user_id=user_id, query=query, subject_id=subject_id, limit=limit
+        async with self._session_factory() as session:
+            retrieval = RetrievalService(
+                self._embedder,
+                SearchService(ChunkRepository(session)),
+                DocumentContentRepository(session),
             )
-        except Exception:  # noqa: BLE001 — RAG context is best-effort
-            logger.warning("RAG retrieval unavailable; answering without context")
-            chunks: list[SearchResult] = []
+            try:
+                chunks = await retrieval.query(
+                    user_id=user_id, query=query, subject_id=subject_id, limit=limit
+                )
+            except Exception:  # noqa: BLE001 — RAG context is best-effort
+                logger.warning("RAG retrieval unavailable; answering without context")
+                chunks: list[SearchResult] = []
+            disabled = await AiProviderRepository(session).disabled_names()
+
         context = "\n\n".join(
             f"[{i + 1}] {chunk.content}" for i, chunk in enumerate(chunks)
         )
-        disabled = await self._providers.disabled_names()
         result = await self._gateway.generate(
             build_rag_prompt(query, context),
             system=ASSISTANT_SYSTEM_PROMPT,

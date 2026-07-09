@@ -3,6 +3,7 @@
 import pytest
 from sqlalchemy import text
 
+from app.api.csrf import CSRF_COOKIE_NAME
 from app.infrastructure.database.session import SessionFactory
 
 pytestmark = pytest.mark.integration
@@ -91,10 +92,16 @@ async def test_refresh_rotates_and_old_token_is_rejected(client, user_factory):
     assert rotated.status_code == 200
     assert client.cookies.get("refresh_token") != old_refresh
 
-    # Present the old (now revoked) refresh token -> reuse detected.
+    # Present the old (now revoked) refresh token, keeping a currently-valid
+    # CSRF pair so the request clears CSRF and exercises reuse detection.
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
     client.cookies.clear()
     reused = await client.post(
-        REFRESH, headers={"Cookie": f"refresh_token={old_refresh}"}
+        REFRESH,
+        headers={
+            "Cookie": f"refresh_token={old_refresh}; {CSRF_COOKIE_NAME}={csrf_token}",
+            "X-CSRF-Token": csrf_token,
+        },
     )
     assert reused.status_code == 401
 
@@ -134,3 +141,32 @@ async def test_login_writes_audit_log(client, user_factory):
             text("SELECT count(*) FROM auth_logs WHERE event = 'LOGIN_SUCCESS'")
         )
     assert count == 1
+
+
+async def test_login_account_lockout_persists_across_ips(client, user_factory):
+    """A distributed attacker (many IPs) against one account still locks out."""
+    await user_factory(email="g@test.com")
+
+    codes = []
+    for i in range(6):
+        resp = await client.post(
+            LOGIN,
+            json={"email": "g@test.com", "password": "wrong"},
+            headers={"X-Forwarded-For": f"10.0.0.{i}"},
+        )
+        codes.append(resp.status_code)
+
+    assert codes[:5] == [401, 401, 401, 401, 401]
+    assert codes[5] == 429
+
+
+async def test_mutating_request_without_csrf_header_is_forbidden(client, user_factory):
+    await user_factory(email="h@test.com")
+    await client.post(LOGIN, json={"email": "h@test.com", "password": "Senha@123"})
+
+    resp = await client.post(
+        "/api/v1/subjects",
+        json={"name": "Mathematics"},
+        headers={"X-CSRF-Token": ""},  # override the fixture's auto-synced header
+    )
+    assert resp.status_code == 403

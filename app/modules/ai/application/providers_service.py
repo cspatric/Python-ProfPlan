@@ -65,7 +65,7 @@ class AiProvidersService:
         enabled_by_name = {row.name: row.enabled for row in await self._repo.list_all()}
         statuses: list[ProviderStatus] = []
         for order, (name, circuit_open) in enumerate(
-            self._gateway.provider_states(), start=1
+            await self._gateway.provider_states(), start=1
         ):
             configured = self._configured(name)
             enabled = enabled_by_name.get(name, True)  # missing row -> enabled
@@ -83,7 +83,7 @@ class AiProvidersService:
 
     async def set_enabled(self, name: str, enabled: bool) -> list[ProviderStatus]:
         """Enable/disable a provider, enforcing the fallback invariants + audit."""
-        names = [n for n, _ in self._gateway.provider_states()]
+        names = [n for n, _ in await self._gateway.provider_states()]
         if name not in names:
             raise UnknownProviderError
 

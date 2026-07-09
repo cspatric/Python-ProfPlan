@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.api.csrf import CSRF_COOKIE_NAME
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.infrastructure.database.base import Base
@@ -94,13 +95,25 @@ async def _clean_state():
 
 @pytest_asyncio.fixture
 async def client():
-    """In-process HTTP client bound to the FastAPI app."""
+    """In-process HTTP client bound to the FastAPI app.
+
+    Mirrors the csrf_token cookie into the X-CSRF-Token header after every
+    response — exactly what a real frontend must do for the double-submit
+    CSRF check — so tests don't need to handle it individually.
+    """
     from app.main import app
 
     transport = ASGITransport(app=app)
     async with AsyncClient(
         transport=transport, base_url="http://testserver"
     ) as http_client:
+
+        async def _sync_csrf_header(response):
+            token = response.cookies.get(CSRF_COOKIE_NAME)
+            if token:
+                http_client.headers["X-CSRF-Token"] = token
+
+        http_client.event_hooks["response"] = [_sync_csrf_header]
         yield http_client
 
 

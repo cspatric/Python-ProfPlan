@@ -46,9 +46,18 @@ class IngestionService:
 
         The status only flips to INDEXED once the chunks (with embeddings) are
         actually persisted in pgvector — never before.
+
+        Idempotent: a redelivered Celery task or a duplicate trigger for a
+        document that's already PROCESSING or INDEXED is a safe no-op instead
+        of re-downloading, re-parsing and re-embedding from scratch.
         """
         document = await self._documents.get_for_processing(document_id)
         if document is None:
+            return None
+        if document.ingestion_status in (
+            IngestionStatus.PROCESSING,
+            IngestionStatus.INDEXED,
+        ):
             return None
 
         await self._documents.set_ingestion_status(

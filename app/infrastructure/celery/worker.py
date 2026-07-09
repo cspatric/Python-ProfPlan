@@ -14,6 +14,14 @@ celery_app = Celery(
         "app.infrastructure.celery.tasks.generate",
     ],
 )
+celery_app.conf.update(
+    # Ack only after the task returns, so a worker crash mid-task redelivers
+    # it instead of silently losing it (relies on tasks being idempotent —
+    # see IngestionService.ingest's PROCESSING/INDEXED no-op guard).
+    task_acks_late=True,
+    # Don't let one worker hoard several unacked tasks while others sit idle.
+    worker_prefetch_multiplier=1,
+)
 
 
 @worker_process_init.connect

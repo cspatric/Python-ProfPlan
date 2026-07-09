@@ -35,7 +35,7 @@ class FakeRepo:
 
 
 class FakeGateway:
-    def provider_states(self) -> list[tuple[str, bool]]:
+    async def provider_states(self) -> list[tuple[str, bool]]:
         return [(name, False) for name in _CHAIN]
 
 

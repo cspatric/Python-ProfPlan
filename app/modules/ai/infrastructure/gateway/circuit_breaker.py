@@ -1,41 +1,52 @@
-"""A minimal in-process circuit breaker for LLM providers."""
+"""A Redis-backed circuit breaker for LLM providers.
 
-import time
+State lives in Redis (not process memory) so every API/worker process — and
+every replica in a horizontally-scaled deployment — shares the same view of
+"is this provider down" instead of each maintaining its own, uncoordinated
+guess and hammering a dead provider that a sibling process already gave up on.
+"""
+
+from redis.asyncio import Redis
 
 
 class CircuitBreaker:
     """Skips a provider after repeated failures, retrying after a cooldown.
 
-    States: closed (calls allowed) → open (calls skipped for ``reset_seconds``)
-    → half-open (one trial allowed; success closes, failure re-opens).
+    States: closed (calls allowed) -> open (calls skipped for
+    ``reset_seconds``) -> half-open (the open key's TTL expires, so the next
+    ``allow()`` lets a trial through; success closes it, failure re-opens it).
     """
 
-    def __init__(self, *, failure_threshold: int, reset_seconds: float) -> None:
+    def __init__(
+        self,
+        redis: Redis,
+        *,
+        name: str,
+        failure_threshold: int,
+        reset_seconds: float,
+    ) -> None:
+        self._redis = redis
+        self._failures_key = f"cb:{name}:failures"
+        self._open_key = f"cb:{name}:open"
         self._threshold = failure_threshold
         self._reset_seconds = reset_seconds
-        self._failures = 0
-        self._opened_at: float | None = None
 
-    def allow(self) -> bool:
+    async def allow(self) -> bool:
         """Return True if a call to the provider should be attempted."""
-        if self._opened_at is None:
-            return True
-        # Half-open: after the cooldown, allow a single trial.
-        return (time.monotonic() - self._opened_at) >= self._reset_seconds
+        return not await self._redis.exists(self._open_key)
 
-    @property
-    def is_open(self) -> bool:
+    async def is_open(self) -> bool:
         """True while the breaker is open (calls skipped), without mutating."""
-        return (
-            self._opened_at is not None
-            and (time.monotonic() - self._opened_at) < self._reset_seconds
-        )
+        return bool(await self._redis.exists(self._open_key))
 
-    def record_success(self) -> None:
-        self._failures = 0
-        self._opened_at = None
+    async def record_success(self) -> None:
+        await self._redis.delete(self._failures_key, self._open_key)
 
-    def record_failure(self) -> None:
-        self._failures += 1
-        if self._failures >= self._threshold:
-            self._opened_at = time.monotonic()
+    async def record_failure(self) -> None:
+        failures = await self._redis.incr(self._failures_key)
+        if failures == 1:
+            # Bound the failure count to a rolling window so unrelated
+            # failures far apart in time don't accumulate toward the threshold.
+            await self._redis.expire(self._failures_key, int(self._reset_seconds))
+        if failures >= self._threshold:
+            await self._redis.set(self._open_key, "1", ex=int(self._reset_seconds))

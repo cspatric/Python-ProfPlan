@@ -1,7 +1,10 @@
 """Authentication HTTP endpoints."""
 
+import secrets
+
 from fastapi import APIRouter, Request, Response, status
 
+from app.api.csrf import CSRF_COOKIE_NAME
 from app.api.rate_limit import auth_limit
 from app.core.config import get_settings
 from app.modules.auth.application.dto import IssuedTokens
@@ -48,10 +51,26 @@ def _set_auth_cookies(response: Response, tokens: IssuedTokens) -> None:
         domain=_settings.cookie_domain,
         path="/",
     )
+    # Not HttpOnly on purpose: the frontend must read it and mirror it into
+    # the X-CSRF-Token header (see app/api/csrf.py).
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=secrets.token_urlsafe(32),
+        max_age=_settings.access_token_expire_minutes * 60,
+        httponly=False,
+        secure=_settings.cookie_secure,
+        samesite=_settings.cookie_samesite,
+        domain=_settings.cookie_domain,
+        path="/",
+    )
 
 
 def _clear_auth_cookies(response: Response) -> None:
-    for name in (_settings.access_cookie_name, _settings.refresh_cookie_name):
+    for name in (
+        _settings.access_cookie_name,
+        _settings.refresh_cookie_name,
+        CSRF_COOKIE_NAME,
+    ):
         response.delete_cookie(key=name, domain=_settings.cookie_domain, path="/")
 
 

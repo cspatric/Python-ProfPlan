@@ -1,29 +1,55 @@
-"""Unit tests for the circuit breaker."""
+"""Unit tests for the Redis-backed circuit breaker."""
 
 from app.modules.ai.infrastructure.gateway.circuit_breaker import CircuitBreaker
 
 
-def test_opens_after_threshold_failures() -> None:
-    breaker = CircuitBreaker(failure_threshold=2, reset_seconds=60)
-    assert breaker.allow()
+class FakeRedis:
+    """A tiny in-memory stand-in for the handful of commands the breaker uses."""
 
-    breaker.record_failure()
-    assert breaker.allow()  # still closed (1 < 2)
-    breaker.record_failure()
-    assert not breaker.allow()  # open
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+
+    async def exists(self, key: str) -> int:
+        return int(key in self.values)
+
+    async def incr(self, key: str) -> int:
+        self.values[key] = str(int(self.values.get(key, "0")) + 1)
+        return int(self.values[key])
+
+    async def expire(self, key: str, seconds: int) -> None:
+        pass  # TTL expiry isn't simulated; tests don't depend on real time.
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self.values[key] = value
+
+    async def delete(self, *keys: str) -> None:
+        for key in keys:
+            self.values.pop(key, None)
 
 
-def test_success_resets_the_breaker() -> None:
-    breaker = CircuitBreaker(failure_threshold=1, reset_seconds=60)
-    breaker.record_failure()
-    assert not breaker.allow()
+def make_breaker(*, threshold: int, reset_seconds: float = 60) -> CircuitBreaker:
+    return CircuitBreaker(
+        FakeRedis(),
+        name="test",
+        failure_threshold=threshold,
+        reset_seconds=reset_seconds,
+    )
 
-    breaker.record_success()
-    assert breaker.allow()
+
+async def test_opens_after_threshold_failures() -> None:
+    breaker = make_breaker(threshold=2)
+    assert await breaker.allow()
+
+    await breaker.record_failure()
+    assert await breaker.allow()  # still closed (1 < 2)
+    await breaker.record_failure()
+    assert not await breaker.allow()  # open
 
 
-def test_half_open_after_cooldown() -> None:
-    # reset_seconds=0 → the cooldown has always elapsed, so a trial is allowed.
-    breaker = CircuitBreaker(failure_threshold=1, reset_seconds=0)
-    breaker.record_failure()
-    assert breaker.allow()
+async def test_success_resets_the_breaker() -> None:
+    breaker = make_breaker(threshold=1)
+    await breaker.record_failure()
+    assert not await breaker.allow()
+
+    await breaker.record_success()
+    assert await breaker.allow()

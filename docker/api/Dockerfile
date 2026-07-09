@@ -29,6 +29,13 @@ COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 COPY scripts ./scripts
 
+# Run as an unprivileged user (both the API and the Celery worker use this
+# image) so a future RCE in a dependency can't write outside /app or touch
+# anything else in the container as root.
+RUN groupadd --system app && useradd --system --gid app --home /app app \
+    && chown -R app:app /app
+USER app
+
 EXPOSE 8000
 
 # --no-access-log: the app's RequestLoggingMiddleware is the single, richer
