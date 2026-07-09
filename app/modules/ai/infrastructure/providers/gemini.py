@@ -40,4 +40,16 @@ class GeminiProvider(HTTPLLMProvider):
             headers={"content-type": "application/json"},
             json=body,
         )
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        # Guard against empty/truncated candidates (e.g. the thinking budget
+        # consuming maxOutputTokens) so the gateway sees a clear failure
+        # instead of a KeyError.
+        candidates = data.get("candidates") or []
+        content = candidates[0].get("content") if candidates else None
+        parts = (content or {}).get("parts")
+        text = parts[0].get("text", "") if parts else ""
+        if not text:
+            reason = (
+                candidates[0].get("finishReason") if candidates else "NO_CANDIDATES"
+            )
+            raise ValueError(f"Gemini returned no text (finishReason={reason})")
+        return text

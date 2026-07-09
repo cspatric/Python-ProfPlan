@@ -1,5 +1,6 @@
 """AI use cases: answer a question grounded on the user's documents (RAG)."""
 
+import logging
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -10,6 +11,9 @@ from app.modules.ai.domain.prompts import (
 from app.modules.ai.infrastructure.gateway.llm_gateway import LLMGateway
 from app.modules.ai.infrastructure.repository import AiProviderRepository
 from app.modules.rag.application.retrieval_service import RetrievalService
+from app.modules.rag.domain.chunk import SearchResult
+
+logger = logging.getLogger("app.ai")
 
 
 @dataclass(slots=True)
@@ -42,10 +46,19 @@ class AiService:
         subject_id: UUID | None = None,
         limit: int = 5,
     ) -> AiAnswer:
-        """Retrieve relevant chunks, then generate an answer via the gateway."""
-        chunks = await self._retrieval.query(
-            user_id=user_id, query=query, subject_id=subject_id, limit=limit
-        )
+        """Retrieve relevant chunks, then generate an answer via the gateway.
+
+        Retrieval is best-effort: if the embedding backend is unavailable (e.g.
+        Ollama/bge-m3 is down) the question is still answered, just without
+        document grounding — a degraded answer beats a 500.
+        """
+        try:
+            chunks = await self._retrieval.query(
+                user_id=user_id, query=query, subject_id=subject_id, limit=limit
+            )
+        except Exception:  # noqa: BLE001 — RAG context is best-effort
+            logger.warning("RAG retrieval unavailable; answering without context")
+            chunks: list[SearchResult] = []
         context = "\n\n".join(
             f"[{i + 1}] {chunk.content}" for i, chunk in enumerate(chunks)
         )
