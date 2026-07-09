@@ -65,6 +65,10 @@
       "key": "document_id",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "generation_id",
+      "value": ""
     }
   ],
   "item": [
@@ -471,7 +475,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"subject_id\": \"{{subject_id}}\",\n  \"starts_at\": \"2026-08-01\",\n  \"ends_at\": \"2026-12-15\",\n  \"class_duration\": 50,\n  \"class_per_week\": 2,\n  \"total_weight\": 100\n}"
+              "raw": "{\n  \"subject_id\": \"{{subject_id}}\",\n  \"starts_at\": \"2026-08-01\",\n  \"ends_at\": \"2026-12-15\",\n  \"class_duration\": 50,\n  \"class_per_week\": 2,\n  \"input\": \"Crie um plano sobre fotossintese com conteudos semanais, uma atividade pratica e uma prova ao final\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}{{apiPrefix}}/plans",
@@ -481,7 +485,8 @@
               "path": [
                 "plans"
               ]
-            }
+            },
+            "description": "Creates a plan AND automatically runs the AI planner (roadmap comes back in `generation`) + queues per-item generation. Poll GET /generations/{{generation_id}}. `input` is optional — omit it for a default AI request."
           },
           "response": []
         },
@@ -1571,6 +1576,69 @@
         }
       ],
       "description": "Audit trail of business actions (create/update/delete). Admin only."
+    },
+    {
+      "name": "Generation",
+      "description": "AI plan generation: planner (sync) -> item fan-out (workers) -> polling. LOCAL-ONLY module (not on GitHub yet).",
+      "item": [
+        {
+          "name": "Generate Plan (AI)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"input\": \"Crie um plano sobre fotossintese com conteudos semanais, uma atividade pratica e uma prova ao final\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/plans/{{plan_id}}/generate",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "plans",
+                "{{plan_id}}",
+                "generate"
+              ]
+            },
+            "description": "Runs the planner (sync, ~5-15s via Gemini) and queues one generation task per item. Returns 202 with the roadmap summary and pending items. Save the returned uuid as generation_id."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Generation (poll)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/generations/{{generation_id}}",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "generations",
+                "{{generation_id}}"
+              ]
+            },
+            "description": "Poll until status is completed/partial. Each item carries generation_status and, when done, content.markdown."
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }

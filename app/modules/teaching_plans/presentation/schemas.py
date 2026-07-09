@@ -5,9 +5,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.modules.generation.presentation.schemas import GenerationResponse
+
 
 class PlanCreate(BaseModel):
-    """Payload to create a plan."""
+    """Payload to create a plan.
+
+    ``input`` is the teacher's free-text request for the AI — creating a plan
+    automatically runs the planner and fans out the item generation.
+    """
 
     subject_id: UUID
     starts_at: date
@@ -16,6 +22,13 @@ class PlanCreate(BaseModel):
     class_per_week: int = Field(gt=0)
     total_weight: float | None = Field(default=None, ge=0)
     academic_items_id: UUID | None = None
+    input: str | None = Field(
+        default=None, description="what the teacher wants the AI to plan/generate"
+    )
+    document_ids: list[UUID] = Field(
+        default_factory=list,
+        description="documents (of this subject) the AI should generate from",
+    )
 
     @model_validator(mode="after")
     def _check_dates(self) -> "PlanCreate":
@@ -52,3 +65,14 @@ class PlanResponse(BaseModel):
     academic_items_id: UUID | None
     created_at: datetime
     updated_at: datetime
+
+
+class PlanCreatedResponse(PlanResponse):
+    """A created plan plus the AI generation kicked off for it.
+
+    ``generation`` is null when the AI could not plan (e.g. all providers
+    down) — the plan itself is still created and the generation can be
+    retriggered via POST /plans/{id}/generate.
+    """
+
+    generation: GenerationResponse | None = None

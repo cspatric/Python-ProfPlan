@@ -26,6 +26,9 @@ from app.modules.auth.infrastructure import models as _auth_models  # noqa: F401
 from app.modules.documents.infrastructure import (  # noqa: F401
     models as _document_models,
 )
+from app.modules.generation.infrastructure import (  # noqa: F401
+    models as _generation_models,
+)
 from app.modules.plan_modules.infrastructure import (  # noqa: F401
     models as _module_models,
 )
@@ -45,7 +48,7 @@ _TABLES = (
     "subjects, plans, modules, academic_items, "
     "academic_item_category, academic_item_category_types, "
     "document_format, document, document_content, chunks, "
-    "ai_provider"
+    "plan_generation, plan_document, ai_provider"
 )
 
 

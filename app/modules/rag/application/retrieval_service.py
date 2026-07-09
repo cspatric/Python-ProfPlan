@@ -29,12 +29,19 @@ class RetrievalService:
         user_id: UUID,
         query: str,
         subject_id: UUID | None = None,
+        content_ids: list[UUID] | None = None,
         limit: int = 5,
     ) -> list[SearchResult]:
-        """Embed the query and return the closest chunks owned by the user."""
-        content_ids = await self._contents.list_content_ids_for_user(
-            user_id, subject_id
-        )
+        """Embed the query and return the closest chunks owned by the user.
+
+        ``content_ids`` restricts the search to specific parsed contents (e.g.
+        the documents a plan selected); when omitted it falls back to all of the
+        user's documents, optionally scoped to ``subject_id``.
+        """
+        if content_ids is None:
+            content_ids = await self._contents.list_content_ids_for_user(
+                user_id, subject_id
+            )
         if not content_ids:
             return []
         embedding = await self._embedder.embed_text(query)

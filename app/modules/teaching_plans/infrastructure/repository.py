@@ -27,6 +27,11 @@ class PlanRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_for_processing(self, plan_id: UUID) -> Plan | None:
+        """Return a plan by id without owner scoping (worker use)."""
+        result = await self._session.execute(select(Plan).where(Plan.uuid == plan_id))
+        return result.scalar_one_or_none()
+
     async def list_by_user(
         self, user_id: UUID, *, limit: int, offset: int
     ) -> list[Plan]:

@@ -441,6 +441,12 @@ services:
       # Isolated test database and Redis logical db — never touch dev data.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}_test
       REDIS_URL: redis://redis:6379/15
+      # Rate limiting is disabled under test so shared-client bursts don't 429;
+      # it is exercised explicitly by test_rate_limit_flow with its own limiter.
+      RATE_LIMIT_ENABLED: "false"
+      # CI has no LLM configured: create plain plans (no AI call / fan-out).
+      # Generation is exercised locally with a real LLM (Ollama/Gemini).
+      PLAN_GENERATION_ENABLED: "false"
     volumes:
       - .:/app
     networks:

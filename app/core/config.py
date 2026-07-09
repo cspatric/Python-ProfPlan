@@ -41,9 +41,20 @@ class Settings(BaseSettings):
     access_cookie_name: str = "access_token"
     refresh_cookie_name: str = "refresh_token"
 
-    # Login rate limiting (Redis)
+    # Login rate limiting (Redis) — per-account failed-attempt lockout.
     login_rate_limit_max_attempts: int = 5
     login_rate_limit_window_seconds: int = 300
+
+    # Global per-IP rate limiting (slowapi + Redis) — protects every route from
+    # request floods/DoS. Disabled in tests. Limits use the slowapi syntax
+    # ("<count>/<period>", e.g. "120/minute"). ``default`` applies to all routes;
+    # ``auth`` guards credential endpoints (brute force); ``expensive`` guards
+    # AI/upload endpoints that consume real resources.
+    rate_limit_enabled: bool = True
+    rate_limit_default: str = "120/minute"
+    rate_limit_auth: str = "10/minute"
+    rate_limit_expensive: str = "20/minute"
+    rate_limit_storage_url: str = "redis://redis:6379/3"
 
     # Object storage (MinIO)
     minio_endpoint: str = "minio:9000"
@@ -66,6 +77,10 @@ class Settings(BaseSettings):
     ollama_chat_model: str = "llama3.2:3b"
     llm_max_tokens: int = 2048
     llm_timeout_seconds: float = 60.0
+    # Auto-generate a plan with AI when it is created (planner + fan-out). When
+    # false, POST /plans creates a plain plan with no AI call — used by CI and
+    # any environment without an LLM configured.
+    plan_generation_enabled: bool = True
     llm_circuit_failure_threshold: int = 3
     llm_circuit_reset_seconds: float = 30.0
     # Cache embeddings in Redis to avoid re-embedding identical text (7 days).

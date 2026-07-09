@@ -53,6 +53,10 @@ jobs:
       REDIS_URL: redis://localhost:6379/15
       JWT_ACCESS_SECRET: ci-access-secret
       JWT_REFRESH_SECRET: ci-refresh-secret
+      # No LLM in CI: create plain plans instead of calling the AI.
+      PLAN_GENERATION_ENABLED: "false"
+      # Disable per-IP limiting so the shared test client isn't throttled.
+      RATE_LIMIT_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

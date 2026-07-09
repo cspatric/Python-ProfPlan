@@ -24,6 +24,9 @@ from app.modules.auth.infrastructure import models as auth_models  # noqa: F401
 from app.modules.documents.infrastructure import (  # noqa: F401
     models as document_models,
 )
+from app.modules.generation.infrastructure import (  # noqa: F401
+    models as generation_models,
+)
 from app.modules.plan_modules.infrastructure import (  # noqa: F401
     models as module_models,
 )
