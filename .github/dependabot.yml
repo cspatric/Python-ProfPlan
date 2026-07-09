@@ -1,23 +1,36 @@
+# Dependabot is configured for DETECTION, not automated pull requests.
+#
+# Vulnerabilities are surfaced without cluttering the branch list:
+#   - GitHub Dependabot Alerts (Security tab) — automatic, no branches
+#   - the CI "security" job (pip-audit + gitleaks) — runs on every push
+#
+# Routine version-update PRs are therefore disabled (open-pull-requests-limit: 0),
+# so Dependabot no longer opens `dependabot/*` branches. Raise a limit above 0 to
+# re-enable auto-update PRs for that ecosystem.
 version: 2
 updates:
-  # Python dependencies (pyproject.toml + uv.lock).
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
-    groups:
-      python-deps:
-        patterns: ["*"]
+    open-pull-requests-limit: 0
+    # Never propose a Python major bump (the project targets 3.13).
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major"]
 
-  # GitHub Actions used by the CI workflows.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 0
 
-  # Base images in the Docker build.
   - package-ecosystem: "docker"
     directory: "/docker/api"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 0
+    # Never propose a Python base-image major bump (the project targets 3.13).
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major"]
