@@ -65,3 +65,26 @@ jobs:
       - run: uv sync --frozen --extra dev
       - name: Integration tests
         run: uv run pytest -m integration tests/integration
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks scans the full history
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen --extra dev
+      # Report-only: surfaces known CVEs in dependencies without blocking merges
+      # on advisories we can't immediately fix (Dependabot opens the update PRs).
+      - name: Dependency vulnerability audit (pip-audit)
+        run: uv run --with pip-audit pip-audit
+        continue-on-error: true
+      # Report-only secret scan across the git history.
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
