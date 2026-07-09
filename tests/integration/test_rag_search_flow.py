@@ -74,7 +74,10 @@ async def test_index_and_vector_search_returns_nearest_chunk() -> None:
         )
 
         search = SearchService(ChunkRepository(session))
-        results = await search.search(query_embedding=_vec(0.9, 0.1), limit=2)
+        # Ownership scope is mandatory; scope to the content just indexed.
+        results = await search.search(
+            query_embedding=_vec(0.9, 0.1), limit=2, content_ids=[content.uuid]
+        )
 
     assert len(results) == 2
     assert results[0].content == "about cats"

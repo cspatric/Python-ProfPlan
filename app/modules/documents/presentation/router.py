@@ -3,11 +3,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, Query, Request, UploadFile, status
+from fastapi import APIRouter, File, Form, Query, Request, Response, UploadFile, status
 
 from app.api.rate_limit import expensive_limit
+from app.core.config import get_settings
 from app.infrastructure.celery.tasks.ingest import ingest_document
 from app.modules.auth.presentation.dependencies import CurrentUser
+from app.modules.documents.domain.exceptions import FileTooLargeError
 from app.modules.documents.presentation.dependencies import (
     ContentServiceDep,
     DocumentServiceDep,
@@ -25,6 +27,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 @expensive_limit
 async def upload_document(
     request: Request,
+    response: Response,
     user: CurrentUser,
     service: UploadServiceDep,
     subject_id: Annotated[UUID, Form()],
@@ -32,7 +35,14 @@ async def upload_document(
     file: Annotated[UploadFile, File()],
 ) -> DocumentResponse:
     """Upload a document; it is stored and queued for async ingestion."""
-    data = await file.read()
+    # Bounded read: never buffer more than the limit (+1 byte to detect overflow),
+    # so a huge upload can't exhaust memory before we reject it with 413.
+    max_bytes = get_settings().max_upload_size_bytes
+    data = await file.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise FileTooLargeError(
+            f"File exceeds the {get_settings().max_upload_size_mb} MB limit"
+        )
     document = await service.upload(
         user_id=user.uuid,
         subject_id=subject_id,

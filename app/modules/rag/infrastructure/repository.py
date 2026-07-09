@@ -39,18 +39,26 @@ class ChunkRepository:
         embedding: list[float],
         *,
         limit: int,
-        content_ids: Sequence[UUID] | None = None,
+        content_ids: Sequence[UUID],
     ) -> list[tuple[Chunk, float]]:
         """Return the nearest chunks by cosine distance (smaller is closer).
 
-        Optionally restrict the search to a set of ``content_ids``.
+        Tenant isolation: the search is ALWAYS scoped to ``content_ids`` (the
+        contents the caller is allowed to read). An empty scope returns nothing —
+        we never run an unscoped similarity search, so one user's query can never
+        match another user's chunks.
         """
+        if not content_ids:
+            return []
         distance = Chunk.embedding.cosine_distance(embedding)
-        stmt = select(Chunk, distance.label("distance")).where(
-            Chunk.embedding.is_not(None)
+        stmt = (
+            select(Chunk, distance.label("distance"))
+            .where(
+                Chunk.embedding.is_not(None),
+                Chunk.document_content_id.in_(content_ids),
+            )
+            .order_by(distance.asc())
+            .limit(limit)
         )
-        if content_ids:
-            stmt = stmt.where(Chunk.document_content_id.in_(content_ids))
-        stmt = stmt.order_by(distance.asc()).limit(limit)
         result = await self._session.execute(stmt)
         return [(row[0], row[1]) for row in result.all()]

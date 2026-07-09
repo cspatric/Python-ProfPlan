@@ -7,6 +7,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.infrastructure.storage.minio import ObjectStorage
 from app.modules.documents.application.document_service import DocumentService
+from app.modules.documents.domain.upload_validation import validate_document_upload
 from app.modules.documents.infrastructure.models import Document
 from app.modules.documents.infrastructure.repository import (
     DocumentFormatRepository,
@@ -37,7 +38,14 @@ class UploadService:
         data: bytes,
         content_type: str,
     ) -> Document:
-        """Store the file and create the document (owned via its subject)."""
+        """Store the file and create the document (owned via its subject).
+
+        The upload is validated (extension + declared MIME + real magic bytes)
+        before anything is persisted; an invalid file raises a 415.
+        """
+        validate_document_upload(
+            filename=filename, content_type=content_type, data=data
+        )
         suffix = Path(filename).suffix.lower()
         fmt = await self._formats.get_or_create(suffix.lstrip(".") or "bin")
         object_name = f"{subject_id}/{uuid4().hex}{suffix}"

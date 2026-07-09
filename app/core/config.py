@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     rate_limit_expensive: str = "20/minute"
     rate_limit_storage_url: str = "redis://redis:6379/3"
 
+    # Security headers. HSTS is only meaningful over HTTPS, so it defaults to
+    # on in production and off in development. Everything else is always sent.
+    security_headers_enabled: bool = True
+    hsts_enabled: bool | None = None  # None -> follow the environment (prod only)
+
+    # Uploads — reject anything larger before it can exhaust memory/disk.
+    max_upload_size_mb: int = 100
+
     # Object storage (MinIO)
     minio_endpoint: str = "minio:9000"
     minio_root_user: str = "minioadmin"
@@ -106,6 +114,18 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         """Parsed list of allowed CORS origins."""
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
+    @property
+    def hsts_active(self) -> bool:
+        """Whether to send HSTS (explicit override, else production only)."""
+        if self.hsts_enabled is not None:
+            return self.hsts_enabled
+        return not self.is_development
+
+    @property
+    def max_upload_size_bytes(self) -> int:
+        """Upload size limit in bytes."""
+        return self.max_upload_size_mb * 1024 * 1024
 
 
 @lru_cache

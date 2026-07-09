@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Request, status
+from fastapi import APIRouter, Query, Request, Response, status
 
 from app.api.rate_limit import expensive_limit
 from app.core.config import get_settings
@@ -29,6 +29,7 @@ router = APIRouter(prefix="/plans", tags=["plans"])
 @expensive_limit
 async def create_plan(
     request: Request,
+    response: Response,
     payload: PlanCreate,
     user: CurrentUser,
     service: PlanServiceDep,

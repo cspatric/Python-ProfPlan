@@ -13,6 +13,7 @@ from app.api.exceptions import register_exception_handlers
 from app.api.middleware import RequestLoggingMiddleware
 from app.api.rate_limit import limiter
 from app.api.router import api_router
+from app.api.security_headers import SecurityHeadersMiddleware
 from app.core.config import get_settings
 from app.infrastructure.database.session import engine
 from app.infrastructure.redis.client import redis_client
@@ -28,15 +29,23 @@ setup_logging(settings.log_level)
 app = FastAPI(title="ProfPlan API")
 register_exception_handlers(app)
 
-# Per-IP rate limiting (slowapi + Redis). The global default limit is enforced by
-# SlowAPIMiddleware on every route; a 429 is returned when a client floods the
-# API. Added before the logging middleware so rejected requests are still logged.
+# NB: Starlette runs the LAST-added middleware first (outermost). They are added
+# here inner-to-outer so the effective order is:
+#   SecurityHeaders -> RequestLogging -> SlowAPI (rate limit) -> route
+# This way security headers decorate every response (including 429s) and the
+# logger records rate-limited requests too.
+
+# Per-IP rate limiting (slowapi + Redis): a 429 is returned when a client floods.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 # One structured log line per HTTP request (method, user, status, latency, ...).
 app.add_middleware(RequestLoggingMiddleware)
+
+# Security headers on every response (CSP, HSTS in prod, anti-clickjacking, ...).
+if settings.security_headers_enabled:
+    app.add_middleware(SecurityHeadersMiddleware, hsts=settings.hsts_active)
 
 # Prometheus metrics at /metrics (request rate, latency, status codes).
 Instrumentator().instrument(app).expose(

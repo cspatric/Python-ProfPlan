@@ -9,6 +9,8 @@ touching code. It is loaded at call time and its tokens are replaced:
 from functools import lru_cache
 from pathlib import Path
 
+from app.shared.ai.prompt_safety import CONTEXT_SAFETY_RULE, wrap_untrusted_context
+
 _PLANNER_PROMPT_FILE = Path(__file__).with_name("planner_prompt.md")
 _TEMPLATE_DIVIDER = "\n---\n"
 
@@ -17,7 +19,7 @@ PLANNER_SYSTEM = (
     "roadmap of a teaching plan: which modules (units) it should have and which "
     "academic items (content, activities, assessments, bibliography, ...) each "
     "module needs. You do NOT write the content itself here — you only plan it. "
-    "Respond in the same language as the teacher's input."
+    "Respond in the same language as the teacher's input. " + CONTEXT_SAFETY_RULE
 )
 
 
@@ -33,7 +35,8 @@ def _planner_template() -> str:
 def build_planner_prompt(*, teacher_input: str, context: str, plan_info: str) -> str:
     """Fill the markdown template with the plan info, request and RAG context."""
     context_block = (
-        f"\n\nReference material from the teacher's documents:\n{context}"
+        "\n\nReference material from the teacher's documents:\n"
+        + wrap_untrusted_context(context)
         if context
         else ""
     )
@@ -49,14 +52,15 @@ GENERATOR_SYSTEM = (
     "You are a teaching-content generator. You produce a single academic item "
     "(content, activity, assessment or bibliography) for a teaching plan, ready "
     "to use, grounded in the provided context when relevant. Respond in the same "
-    "language as the request. Return well-structured Markdown."
+    "language as the request. Return well-structured Markdown. " + CONTEXT_SAFETY_RULE
 )
 
 
 def build_item_prompt(*, item_prompt: str, context: str, plan_info: str) -> str:
     """Prompt for generating one academic item's content."""
     context_block = (
-        f"\n\nReference material from the teacher's documents:\n{context}"
+        "\n\nReference material from the teacher's documents:\n"
+        + wrap_untrusted_context(context)
         if context
         else ""
     )

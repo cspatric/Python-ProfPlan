@@ -18,13 +18,16 @@ class SearchService:
         *,
         query_embedding: list[float],
         limit: int = 5,
-        content_ids: Sequence[UUID] | None = None,
+        content_ids: Sequence[UUID],
     ) -> list[SearchResult]:
         """Return the ``limit`` closest chunks by cosine distance.
 
-        Ownership scoping is the caller's responsibility: pass the ids of the
-        contents the user is allowed to read via ``content_ids``.
+        Ownership scoping is mandatory: ``content_ids`` are the ids of the
+        contents the user is allowed to read. An empty scope returns nothing —
+        the search is never run unscoped (tenant isolation).
         """
+        if not content_ids:
+            return []
         rows = await self._chunks.search_similar(
             query_embedding, limit=limit, content_ids=content_ids
         )

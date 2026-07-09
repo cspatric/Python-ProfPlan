@@ -1,6 +1,6 @@
 """AI HTTP endpoints."""
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 
 from app.api.rate_limit import expensive_limit
 from app.modules.ai.presentation.dependencies import (
@@ -24,6 +24,7 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 async def ask(
     payload: AiAskRequest,
     request: Request,
+    response: Response,
     user: CurrentUser,
     service: AiServiceDep,
 ) -> AiAnswerResponse:

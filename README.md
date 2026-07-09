@@ -295,6 +295,40 @@ real client IP is taken from Traefik's `X-Forwarded-For`. Liveness/readiness
 probes are exempt. Toggle the whole layer with `RATE_LIMIT_ENABLED` (off under
 test). Covered by `app/api/tests/test_rate_limit.py`.
 
+## Security hardening
+
+Beyond auth and rate limiting, the app defends the OWASP-relevant surfaces:
+
+- **Security headers** (`app/api/security_headers.py`) — every response carries
+  `Content-Security-Policy` (locked to `default-src 'none'` for the JSON API, a
+  looser policy only for `/docs`), `X-Frame-Options: DENY` (clickjacking),
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+  `Permissions-Policy`, and `Strict-Transport-Security` in production (HTTPS).
+- **Safe uploads** (`app/modules/documents/domain/upload_validation.py`) — never
+  trust the client. Before storing, we validate the **extension** (allow-list),
+  the declared **MIME**, and the real **magic bytes** (a `virus.exe` renamed
+  `notes.pdf` is rejected), and enforce a **size limit** (`MAX_UPLOAD_SIZE_MB`,
+  default 100 MB) with a bounded read so a huge file can't exhaust memory before
+  it's rejected (`413`). Files are only stored/parsed, never executed.
+- **Prompt injection** (`app/shared/ai/prompt_safety.py`) — retrieved document
+  text is attacker-controlled ("ignore all previous instructions…"). It is never
+  spliced raw into a prompt: it's wrapped in `<untrusted_document_context>`
+  delimiters and every AI system prompt instructs the model to treat that block
+  as reference data, never as commands.
+- **RAG tenant isolation** — the similarity search is **always** scoped to the
+  content ids the user owns (`ChunkRepository.search_similar` refuses to run
+  without a scope). One teacher can never retrieve another teacher's material.
+- **SQL injection** — 100% SQLAlchemy ORM with bound parameters; no
+  string-interpolated SQL anywhere (the only raw statement is a static
+  `SELECT 1` readiness probe).
+- **Dependency & secret scanning** — `dependabot` (weekly PRs for pip, Actions,
+  Docker) plus a CI `security` job running `pip-audit` (known CVEs) and
+  `gitleaks` (committed secrets). Secrets live only in `.env` (git-ignored);
+  only `.env.example` is committed.
+
+Covered by `test_upload_validation`, `test_prompt_safety`,
+`test_search_isolation` and `test_security_headers`.
+
 ## Load / performance testing
 
 `perf/` holds a Locust load test for the **non-AI** paths (HTTP + Postgres +

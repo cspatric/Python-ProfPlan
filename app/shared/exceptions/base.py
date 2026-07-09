@@ -60,3 +60,17 @@ class RateLimitError(AppError):
 
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     detail = "Too many requests"
+
+
+class PayloadTooLargeError(AppError):
+    """The request body exceeds the allowed size."""
+
+    status_code = status.HTTP_413_CONTENT_TOO_LARGE
+    detail = "Payload too large"
+
+
+class UnsupportedMediaTypeError(AppError):
+    """The uploaded content type is not accepted."""
+
+    status_code = status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
+    detail = "Unsupported media type"
