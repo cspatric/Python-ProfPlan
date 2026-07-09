@@ -1,7 +1,10 @@
 """Application entrypoint."""
 
+from pathlib import Path
+
 from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
@@ -70,6 +73,14 @@ if settings.is_development and settings.cors_origins:
     )
 
 app.include_router(api_router, prefix=settings.api_prefix)
+
+# Local, bundled assets (currently the icon catalog's SVGs). Not for
+# user-uploaded content — those go through MinIO (see infrastructure/storage).
+app.mount(
+    "/static",
+    StaticFiles(directory=Path(__file__).parent / "static"),
+    name="static",
+)
 
 
 @app.get("/health")

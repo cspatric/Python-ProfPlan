@@ -24,9 +24,12 @@ class Subject(Base):
         nullable=False,
         index=True,
     )
-    # Soft references (no target tables yet): icons / colors catalogs.
-    icon_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
-    color_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    icon_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("icons.uuid", ondelete="SET NULL")
+    )
+    color_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("colors.uuid", ondelete="SET NULL")
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     knowledge_area: Mapped[str | None] = mapped_column(String(255))
