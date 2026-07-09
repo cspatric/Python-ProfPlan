@@ -35,6 +35,9 @@ from app.modules.academic_items.infrastructure import (  # noqa: E402, F401
 )
 from app.modules.audit.infrastructure import models as _audit_models  # noqa: E402, F401
 from app.modules.auth.infrastructure import models as _auth_models  # noqa: E402, F401
+from app.modules.catalogs.infrastructure import (  # noqa: E402, F401
+    models as _catalog_models,
+)
 from app.modules.documents.infrastructure import (  # noqa: E402, F401
     models as _document_models,
 )
