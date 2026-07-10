@@ -1,8 +1,13 @@
 # pip/github-actions stay DETECTION-only: those ecosystems are already covered
 # by the now-blocking CI "security" job (pip-audit) on every push, plus
 # GitHub's own Dependabot Alerts (Security tab) — routine PRs there would just
-# be noise. `docker` is different: nothing else bumps our pinned image tags
-# (see docker-compose.yml / docker/api/Dockerfile), so it gets real PRs.
+# be noise. `docker` is different: nothing else bumps docker/api/Dockerfile's
+# pinned base image, so it gets real PRs.
+#
+# NB: a `directory: "/"` docker-ecosystem entry for docker-compose.yml's
+# pinned images was tried and rejected by Dependabot ("No Dockerfiles nor
+# Kubernetes YAML found in /") despite compose support being GA — so those
+# image tags (see docker-compose.yml) are bumped manually for now.
 version: 2
 updates:
   - package-ecosystem: "pip"
@@ -30,9 +35,3 @@ updates:
     ignore:
       - dependency-name: "python"
         update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
