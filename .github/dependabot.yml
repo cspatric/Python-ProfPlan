@@ -1,12 +1,8 @@
-# Dependabot is configured for DETECTION, not automated pull requests.
-#
-# Vulnerabilities are surfaced without cluttering the branch list:
-#   - GitHub Dependabot Alerts (Security tab) — automatic, no branches
-#   - the CI "security" job (pip-audit + gitleaks) — runs on every push
-#
-# Routine version-update PRs are therefore disabled (open-pull-requests-limit: 0),
-# so Dependabot no longer opens `dependabot/*` branches. Raise a limit above 0 to
-# re-enable auto-update PRs for that ecosystem.
+# pip/github-actions stay DETECTION-only: those ecosystems are already covered
+# by the now-blocking CI "security" job (pip-audit) on every push, plus
+# GitHub's own Dependabot Alerts (Security tab) — routine PRs there would just
+# be noise. `docker` is different: nothing else bumps our pinned image tags
+# (see docker-compose.yml / docker/api/Dockerfile), so it gets real PRs.
 version: 2
 updates:
   - package-ecosystem: "pip"
@@ -29,8 +25,14 @@ updates:
     directory: "/docker/api"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     # Never propose a Python base-image major bump (the project targets 3.13).
     ignore:
       - dependency-name: "python"
         update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

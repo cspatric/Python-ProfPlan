@@ -77,14 +77,14 @@ jobs:
         with:
           python-version: "3.13"
       - run: uv sync --frozen --extra dev
-      # Report-only: surfaces known CVEs in dependencies without blocking merges
-      # on advisories we can't immediately fix (Dependabot opens the update PRs).
+      # Blocking: fails the build on any known CVE in a dependency. If a real
+      # advisory has no fix yet, waive it explicitly with pip-audit's
+      # --ignore-vuln (documented at the call site) rather than re-adding
+      # continue-on-error, which silences everything indiscriminately.
       - name: Dependency vulnerability audit (pip-audit)
         run: uv run --with pip-audit pip-audit
-        continue-on-error: true
-      # Report-only secret scan across the git history.
+      # Blocking secret scan across the git history.
       - name: Secret scan (gitleaks)
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true

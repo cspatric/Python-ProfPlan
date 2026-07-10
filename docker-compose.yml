@@ -78,7 +78,7 @@ services:
   #   docker compose exec ollama ollama pull bge-m3
   # -------------------------------------------------------------------------
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.31.2
     profiles: ["dev", "production"]
     restart: unless-stopped
     volumes:
@@ -206,7 +206,7 @@ services:
   # MinIO — S3-compatible object storage for documents. Official image.
   # -------------------------------------------------------------------------
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     profiles: ["dev", "production"]
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -245,11 +245,15 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./docker/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./docker/traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
+      - ./docker/traefik/certs:/etc/traefik/certs:ro
     networks:
       - frontend
     ports:
       - "80:80"
-      - "8080:8080"
+      - "443:443"
+      # No public 8080 (the dashboard's old unauthenticated listener) — see
+      # traefik.yml's `api.insecure: false` and dynamic.yml's commented
+      # basic-auth dashboard router.
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 15s
@@ -261,7 +265,7 @@ services:
   # Adminer — lightweight DB UI, development only.
   # -------------------------------------------------------------------------
   adminer:
-    image: adminer:latest
+    image: adminer:5.4.2
     profiles: ["dev"]
     restart: unless-stopped
     environment:
@@ -279,7 +283,7 @@ services:
   # Loki — log aggregation.
   # -------------------------------------------------------------------------
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:3.7.3
     profiles: ["observability"]
     restart: unless-stopped
     command: -config.file=/etc/loki/loki-config.yml
@@ -297,7 +301,7 @@ services:
   # Tempo — distributed trace backend (queried by Grafana).
   # -------------------------------------------------------------------------
   tempo:
-    image: grafana/tempo:latest
+    image: grafana/tempo:3.0.2
     profiles: ["observability"]
     restart: unless-stopped
     command: ["-config.file=/etc/tempo/tempo.yml"]
@@ -312,7 +316,7 @@ services:
   # OpenTelemetry Collector — receives traces/metrics/logs from the app.
   # -------------------------------------------------------------------------
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.156.0
     profiles: ["observability"]
     restart: unless-stopped
     command: ["--config=/etc/otel/collector-config.yaml"]
@@ -329,7 +333,7 @@ services:
   # Prometheus — metrics.
   # -------------------------------------------------------------------------
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.13.0
     profiles: ["observability"]
     restart: unless-stopped
     volumes:
@@ -349,7 +353,7 @@ services:
   # Grafana — dashboards (datasources provisioned for Prometheus + Loki).
   # -------------------------------------------------------------------------
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.6.16
     profiles: ["observability"]
     restart: unless-stopped
     depends_on:
@@ -378,7 +382,7 @@ services:
   # Prometheus. Reads the host filesystem read-only via bind mounts.
   # -------------------------------------------------------------------------
   node-exporter:
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:v1.11.1
     profiles: ["observability"]
     restart: unless-stopped
     command:
@@ -401,7 +405,7 @@ services:
   # ships them to Loki. The app logs structured JSON, queryable via `| json`.
   # -------------------------------------------------------------------------
   promtail:
-    image: grafana/promtail:latest
+    image: grafana/promtail:3.6.11
     profiles: ["observability"]
     restart: unless-stopped
     command: -config.file=/etc/promtail/promtail.yml

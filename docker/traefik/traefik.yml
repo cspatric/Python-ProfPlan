@@ -1,7 +1,11 @@
 # Traefik static configuration
 api:
   dashboard: true
-  insecure: true
+  # No unauthenticated dashboard listener on :8080 (was `insecure: true`,
+  # reachable by anyone who could hit the host). To use the dashboard, define
+  # an explicit router for the `api@internal` service in dynamic.yml, guarded
+  # by the basic-auth middleware there (see the commented example).
+  insecure: false
 
 ping: {}
 
@@ -23,3 +27,19 @@ log:
   level: INFO
 
 accessLog: {}
+
+# TLS certificates are declared in dynamic.yml (the file provider's
+# `tls.certificates` section) — a self-signed pair for local/homolog use.
+#
+# When a real domain exists, switch to Let's Encrypt instead: uncomment the
+# resolver below, point DNS at this host, and reference
+# `certResolver: letsencrypt` on the `api-secure` router in dynamic.yml
+# instead of its `tls: {}` block.
+#
+# certificatesResolvers:
+#   letsencrypt:
+#     acme:
+#       email: admin@example.com
+#       storage: /etc/traefik/acme/acme.json
+#       httpChallenge:
+#         entryPoint: web

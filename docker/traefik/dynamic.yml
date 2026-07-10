@@ -1,14 +1,55 @@
 # Traefik dynamic configuration (routing)
 http:
   routers:
+    # Plain HTTP — what local dev has always used (http://api.localhost).
+    # Left unredirected so `make up` keeps working without a trusted cert.
     api:
       rule: "Host(`api.localhost`)"
       entryPoints:
         - web
       service: api-service
 
+    # HTTPS — self-signed for now (see tls.certificates below); swap to
+    # `certResolver: letsencrypt` once a real domain exists (see traefik.yml).
+    api-secure:
+      rule: "Host(`api.localhost`)"
+      entryPoints:
+        - websecure
+      service: api-service
+      tls: {}
+
+    # Example: expose the Traefik dashboard behind basic auth instead of the
+    # old unauthenticated :8080 listener. Generate a hash with
+    # `openssl passwd -apr1`, uncomment, and add the router below.
+    # dashboard:
+    #   rule: "Host(`traefik.localhost`)"
+    #   entryPoints:
+    #     - web
+    #   service: api@internal
+    #   middlewares:
+    #     - dashboard-auth
+    # dashboard-auth:
+    #   basicAuth:
+    #     users:
+    #       - "admin:$apr1$replace$with-a-real-hash"
+
   services:
     api-service:
       loadBalancer:
         servers:
           - url: "http://api:8000"
+
+  middlewares:
+    # Opt-in: uncomment `dashboard-auth` above to use it, or attach a
+    # redirect-to-https middleware here once a production deployment is
+    # ready to force TLS (not enabled by default so local dev over plain
+    # HTTP keeps working).
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/local.crt
+      keyFile: /etc/traefik/certs/local.key

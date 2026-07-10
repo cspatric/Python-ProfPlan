@@ -5,6 +5,11 @@
 .env.*
 !.env.example
 
+# Self-signed local TLS cert (generate with `make certs`) and ACME storage.
+docker/traefik/certs/*
+!docker/traefik/certs/.gitkeep
+docker/traefik/acme/
+
 # ---------------------------------------------------------------------------
 # Python
 # ---------------------------------------------------------------------------

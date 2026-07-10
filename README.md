@@ -31,7 +31,7 @@ per responsibility):
 
 | Service | Image | Purpose | Local port |
 |---------|-------|---------|------------|
-| traefik | `traefik:v3.3` | Edge router / reverse proxy | 80, 8080 (dashboard) |
+| traefik | `traefik:v3.3` | Edge router / reverse proxy | 80, 443 |
 | api | built (`docker/api`) | FastAPI application | via traefik (`api.localhost`) |
 | worker | same image as api | Celery worker (background jobs) | — |
 | flower | same image as api | Celery monitoring dashboard | 5555 |
@@ -87,6 +87,7 @@ for host metrics (CPU, memory, disk, network) and the OTel collector.
 
 ```bash
 cp .env.example .env   # fill in the values
+make certs              # self-signed TLS cert for Traefik's :443 listener
 ```
 
 The stack uses Docker Compose **profiles**:
@@ -104,8 +105,8 @@ Once the stack is up, each service is reachable at:
 
 | Service | URL | Notes |
 |---------|-----|-------|
-| API (FastAPI) | http://api.localhost/health | Via Traefik. Add `127.0.0.1 api.localhost` to your hosts file, or send `Host: api.localhost` header |
-| Traefik dashboard | http://localhost:8080/dashboard/ | Router/service overview |
+| API (FastAPI) | http://api.localhost/health, https://api.localhost/health | Via Traefik. Add `127.0.0.1 api.localhost` to your hosts file, or send `Host: api.localhost` header. HTTPS uses the self-signed cert from `make certs` — expect a browser warning locally |
+| Traefik dashboard | _not exposed by default_ | The old unauthenticated `:8080` listener is off (`api.insecure: false`). Uncomment the basic-auth `dashboard` router in `docker/traefik/dynamic.yml` to re-enable it safely |
 | Flower (Celery) | http://localhost:5555 | Celery task monitoring — tasks, queues, failures, workers (task-level detail Prometheus doesn't give) |
 | Grafana | http://localhost:3000 | Default login `admin` / `admin` (Prometheus + Loki + **Tempo** datasources pre-provisioned) |
 | Prometheus | http://localhost:9090 | Metrics |
@@ -226,6 +227,16 @@ failing is skipped and the next one is tried. Configure keys/models via
 `ANTHROPIC_*`, `OPENAI_*`, `GEMINI_*` and `OLLAMA_CHAT_MODEL` in `.env` (Ollama
 needs no key and is the final fallback).
 
+Two things keep this endpoint from cascading into the rest of the API under
+load: the circuit breaker's state lives in **Redis** (`LLM_CIRCUIT_*`), not
+process memory, so every API/worker process shares one view of "is this
+provider down" instead of each guessing independently; and outbound calls are
+capped by a process-wide semaphore (`LLM_MAX_CONCURRENCY`, default 5). The
+request also doesn't hold a pooled DB connection during the LLM call itself
+(only during the short retrieval phase before it) — the fallback chain can run
+for minutes (multiple providers × retries × `LLM_TIMEOUT_SECONDS`), and a
+held connection for that long would starve every other route's DB pool.
+
 Providers can be inspected and toggled at runtime: `GET /api/v1/ai/health`
 reports each provider's status, and `PATCH /api/v1/ai/providers/{name}`
 (admin) enables/disables one. Two invariants are enforced: Ollama (the offline
@@ -242,6 +253,12 @@ Uploading a document (`POST /api/v1/documents`, multipart: `file`, `subject_id`,
 `title`) stores it in MinIO and enqueues a Celery task. The worker then parses
 it to markdown (txt/md/pdf/docx/pptx), chunks it, generates embeddings with **bge-m3**
 (Ollama, 1024-dim) and indexes the chunks in pgvector for cosine search.
+
+The task is idempotent: a redelivered or duplicate ingestion trigger for a
+document that's already `PROCESSING` or `INDEXED` is a no-op instead of
+re-downloading, re-parsing and re-embedding from scratch. Celery acks tasks
+late (`task_acks_late`, prefetch 1), so a worker crash mid-task redelivers it
+rather than losing it, relying on that same no-op guard for safety.
 
 Pull the embedding model once after starting the stack:
 
@@ -323,8 +340,22 @@ Beyond auth and rate limiting, the app defends the OWASP-relevant surfaces:
   `SELECT 1` readiness probe).
 - **Dependency & secret scanning** — `dependabot` (weekly PRs for pip, Actions,
   Docker) plus a CI `security` job running `pip-audit` (known CVEs) and
-  `gitleaks` (committed secrets). Secrets live only in `.env` (git-ignored);
-  only `.env.example` is committed.
+  `gitleaks` (committed secrets), both **blocking** (a finding fails the
+  build). Secrets live only in `.env` (git-ignored); only `.env.example` is
+  committed.
+- **CSRF** (`app/api/csrf.py`, double-submit cookie) — the auth cookies are
+  HttpOnly, so a same-site attacker page can still make the browser send them.
+  A non-HttpOnly `csrf_token` cookie is set alongside them; every unsafe
+  request (except `/auth/login`/`/auth/register`, which precede any session)
+  must mirror it into an `X-CSRF-Token` header, or gets `403`. Skipped when no
+  session cookie is present at all — there's no ambient authority to protect.
+- **TLS** — Traefik terminates HTTPS on `:443` with a self-signed cert
+  (`make certs`) by default; swap to a real Let's Encrypt resolver by
+  uncommenting the block in `docker/traefik/traefik.yml` once a domain
+  exists. The old unauthenticated dashboard listener on `:8080` is disabled
+  (`api.insecure: false`).
+- **Non-root container** — the API/worker image runs as an unprivileged user
+  (`docker/api/Dockerfile`), not root.
 
 Covered by `test_upload_validation`, `test_prompt_safety`,
 `test_search_isolation` and `test_security_headers`.

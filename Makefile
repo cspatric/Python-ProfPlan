@@ -1,8 +1,19 @@
-.PHONY: up down logs ps lint format test test-integration coverage migrate revision pull-model
+.PHONY: up down logs ps lint format test test-integration coverage migrate revision pull-model certs
 
 # Start the full stack (core + observability) and rebuild images.
 up:
 	docker compose --profile dev --profile observability up -d --build
+
+# Generate a self-signed TLS cert for Traefik's local HTTPS listener (run
+# once; regenerate any time with the same command). Swap for a real
+# Let's Encrypt cert in production — see docker/traefik/traefik.yml.
+certs:
+	mkdir -p docker/traefik/certs
+	openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
+		-keyout docker/traefik/certs/local.key \
+		-out docker/traefik/certs/local.crt \
+		-subj "/CN=api.localhost" \
+		-addext "subjectAltName=DNS:api.localhost,DNS:localhost"
 
 # Stop everything (volumes/data are kept).
 down:
