@@ -1,8 +1,10 @@
 """Icon and color catalog use cases (global catalogs)."""
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.catalogs.domain.exceptions import ColorNotFoundError, IconNotFoundError
@@ -11,6 +13,7 @@ from app.modules.catalogs.infrastructure.repository import (
     ColorRepository,
     IconRepository,
 )
+from app.modules.subjects.infrastructure.models import Subject
 
 
 class IconService:
@@ -45,8 +48,12 @@ class IconService:
         return icon
 
     async def delete(self, *, icon_id: UUID) -> None:
+        """Soft-delete an icon; subjects using it fall back to no icon."""
         icon = await self.get(icon_id=icon_id)
-        await self._repo.delete(icon)
+        icon.deleted_at = datetime.now(UTC)
+        await self._session.execute(
+            update(Subject).where(Subject.icon_id == icon.uuid).values(icon_id=None)
+        )
         await self._session.commit()
 
 
@@ -82,6 +89,10 @@ class ColorService:
         return color
 
     async def delete(self, *, color_id: UUID) -> None:
+        """Soft-delete a color; subjects using it fall back to no color."""
         color = await self.get(color_id=color_id)
-        await self._repo.delete(color)
+        color.deleted_at = datetime.now(UTC)
+        await self._session.execute(
+            update(Subject).where(Subject.color_id == color.uuid).values(color_id=None)
+        )
         await self._session.commit()

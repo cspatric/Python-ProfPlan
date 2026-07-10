@@ -1,8 +1,9 @@
 """SQLAlchemy models for academic item category catalogs."""
 
+from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,6 +21,7 @@ class AcademicItemCategory(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Soft reference (no target table yet): icons catalog.
     icon_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AcademicItemCategoryType(Base):
@@ -38,3 +40,4 @@ class AcademicItemCategoryType(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     icon_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

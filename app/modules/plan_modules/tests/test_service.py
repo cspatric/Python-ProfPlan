@@ -14,6 +14,14 @@ from app.modules.plan_modules.domain.exceptions import (
 from app.modules.plan_modules.infrastructure.models import Module
 
 
+class FakeCascadeResult:
+    def scalars(self) -> "FakeCascadeResult":
+        return self
+
+    def all(self) -> list:
+        return []
+
+
 class FakeSession:
     async def commit(self) -> None:
         pass
@@ -23,6 +31,9 @@ class FakeSession:
 
     async def flush(self) -> None:
         pass
+
+    async def execute(self, *args: object, **kwargs: object) -> FakeCascadeResult:
+        return FakeCascadeResult()
 
 
 class FakeAuditRecorder:
@@ -42,7 +53,7 @@ class FakeModuleRepository:
 
     async def get_by_id(self, module_id: UUID, user_id: UUID) -> Module | None:
         module = self.items.get(module_id)
-        if module is None or module.user_id != user_id:
+        if module is None or module.user_id != user_id or module.deleted_at:
             return None
         return module
 
@@ -52,12 +63,9 @@ class FakeModuleRepository:
         owned = [
             m
             for m in self.items.values()
-            if m.plan_id == plan_id and m.user_id == user_id
+            if m.plan_id == plan_id and m.user_id == user_id and not m.deleted_at
         ]
         return owned[offset : offset + limit]
-
-    async def delete(self, module: Module) -> None:
-        self.items.pop(module.uuid, None)
 
 
 class FakePlanRepository:
@@ -131,10 +139,14 @@ async def test_list_requires_owned_plan() -> None:
         await service.list(user_id=uuid4(), plan_id=uuid4(), limit=50, offset=0)
 
 
-async def test_delete_removes_module() -> None:
+async def test_delete_soft_deletes_module() -> None:
     user_id, plan_id = uuid4(), uuid4()
     service, repo = make_service({(plan_id, user_id)})
     created = await service.create(user_id=user_id, data=_module_data(plan_id))
 
     await service.delete(user_id=user_id, module_id=created.uuid)
-    assert created.uuid not in repo.items
+
+    assert created.uuid in repo.items
+    assert created.deleted_at is not None
+    with pytest.raises(ModuleNotFoundError):
+        await service.get(user_id=user_id, module_id=created.uuid)

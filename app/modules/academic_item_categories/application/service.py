@@ -1,5 +1,6 @@
 """Academic item category use cases (global catalogs)."""
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -55,7 +56,7 @@ class CategoryService:
 
     async def delete(self, *, category_id: UUID) -> None:
         category = await self.get(category_id=category_id)
-        await self._repo.delete(category)
+        category.deleted_at = datetime.now(UTC)
         await self._session.commit()
 
 
@@ -111,5 +112,5 @@ class CategoryTypeService:
 
     async def delete(self, *, type_id: UUID) -> None:
         category_type = await self.get(type_id=type_id)
-        await self._repo.delete(category_type)
+        category_type.deleted_at = datetime.now(UTC)
         await self._session.commit()

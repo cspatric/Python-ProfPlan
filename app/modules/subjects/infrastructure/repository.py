@@ -19,10 +19,11 @@ class SubjectRepository:
         self._session.add(subject)
 
     async def get_by_id(self, subject_id: UUID, user_id: UUID) -> Subject | None:
-        """Return a subject by id, scoped to its owner."""
+        """Return a non-deleted subject by id, scoped to its owner."""
         stmt = select(Subject).where(
             Subject.uuid == subject_id,
             Subject.user_id == user_id,
+            Subject.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
@@ -30,17 +31,13 @@ class SubjectRepository:
     async def list_by_user(
         self, user_id: UUID, *, limit: int, offset: int
     ) -> list[Subject]:
-        """Return the user's subjects, most recent first."""
+        """Return the user's non-deleted subjects, most recent first."""
         stmt = (
             select(Subject)
-            .where(Subject.user_id == user_id)
+            .where(Subject.user_id == user_id, Subject.deleted_at.is_(None))
             .order_by(Subject.created_at.desc())
             .limit(limit)
             .offset(offset)
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
-
-    async def delete(self, subject: Subject) -> None:
-        """Delete a subject."""
-        await self._session.delete(subject)

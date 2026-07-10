@@ -14,6 +14,14 @@ from app.modules.teaching_plans.domain.exceptions import (
 from app.modules.teaching_plans.infrastructure.models import Plan
 
 
+class FakeCascadeResult:
+    def scalars(self) -> "FakeCascadeResult":
+        return self
+
+    def all(self) -> list:
+        return []
+
+
 class FakeSession:
     async def commit(self) -> None:
         pass
@@ -23,6 +31,9 @@ class FakeSession:
 
     async def flush(self) -> None:
         pass
+
+    async def execute(self, *args: object, **kwargs: object) -> FakeCascadeResult:
+        return FakeCascadeResult()
 
 
 class FakeAuditRecorder:
@@ -42,18 +53,17 @@ class FakePlanRepository:
 
     async def get_by_id(self, plan_id: UUID, user_id: UUID) -> Plan | None:
         plan = self.items.get(plan_id)
-        if plan is None or plan.user_id != user_id:
+        if plan is None or plan.user_id != user_id or plan.deleted_at:
             return None
         return plan
 
     async def list_by_user(
         self, user_id: UUID, *, limit: int, offset: int
     ) -> list[Plan]:
-        owned = [p for p in self.items.values() if p.user_id == user_id]
+        owned = [
+            p for p in self.items.values() if p.user_id == user_id and not p.deleted_at
+        ]
         return owned[offset : offset + limit]
-
-    async def delete(self, plan: Plan) -> None:
-        self.items.pop(plan.uuid, None)
 
 
 class FakeSubjectRepository:
@@ -135,10 +145,14 @@ async def test_update_to_unowned_subject_raises() -> None:
         )
 
 
-async def test_delete_removes_plan() -> None:
+async def test_delete_soft_deletes_plan() -> None:
     user_id, subject_id = uuid4(), uuid4()
     service, repo = make_service({(subject_id, user_id)})
     created = await service.create(user_id=user_id, data=_plan_data(subject_id))
 
     await service.delete(user_id=user_id, plan_id=created.uuid)
-    assert created.uuid not in repo.items
+
+    assert created.uuid in repo.items
+    assert created.deleted_at is not None
+    with pytest.raises(PlanNotFoundError):
+        await service.get(user_id=user_id, plan_id=created.uuid)

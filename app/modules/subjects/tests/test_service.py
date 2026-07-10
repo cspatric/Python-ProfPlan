@@ -11,6 +11,18 @@ from app.modules.subjects.domain.exceptions import SubjectNotFoundError
 from app.modules.subjects.infrastructure.models import Subject
 
 
+class FakeCascadeResult:
+    """Empty result for the cascade bulk-update statements (real behavior is
+    covered by an integration test against a real DB; these fakes only need
+    to not blow up)."""
+
+    def scalars(self) -> "FakeCascadeResult":
+        return self
+
+    def all(self) -> list:
+        return []
+
+
 class FakeSession:
     async def commit(self) -> None:
         pass
@@ -20,6 +32,9 @@ class FakeSession:
 
     async def flush(self) -> None:
         pass
+
+    async def execute(self, *args: object, **kwargs: object) -> FakeCascadeResult:
+        return FakeCascadeResult()
 
 
 class FakeAuditRecorder:
@@ -42,18 +57,19 @@ class FakeSubjectRepository:
 
     async def get_by_id(self, subject_id: UUID, user_id: UUID) -> Subject | None:
         subject = self.items.get(subject_id)
-        if subject is None or subject.user_id != user_id:
+        if subject is None or subject.user_id != user_id or subject.deleted_at:
             return None
         return subject
 
     async def list_by_user(
         self, user_id: UUID, *, limit: int, offset: int
     ) -> list[Subject]:
-        owned = [s for s in self.items.values() if s.user_id == user_id]
+        owned = [
+            s
+            for s in self.items.values()
+            if s.user_id == user_id and s.deleted_at is None
+        ]
         return owned[offset : offset + limit]
-
-    async def delete(self, subject: Subject) -> None:
-        self.items.pop(subject.uuid, None)
 
 
 def make_service() -> tuple[SubjectService, FakeSubjectRepository]:
@@ -102,13 +118,17 @@ async def test_update_missing_raises() -> None:
         await service.update(user_id=uuid4(), subject_id=uuid4(), data={"name": "x"})
 
 
-async def test_delete_removes_subject() -> None:
+async def test_delete_soft_deletes_subject() -> None:
     service, repo = make_service()
     user_id = uuid4()
     created = await service.create(user_id=user_id, data={"name": "Temp"})
 
     await service.delete(user_id=user_id, subject_id=created.uuid)
-    assert created.uuid not in repo.items
+
+    assert created.uuid in repo.items  # row is kept, not removed
+    assert created.deleted_at is not None
+    with pytest.raises(SubjectNotFoundError):
+        await service.get(user_id=user_id, subject_id=created.uuid)
 
 
 async def test_list_returns_only_owner_subjects() -> None:

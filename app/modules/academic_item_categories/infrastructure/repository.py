@@ -22,22 +22,23 @@ class CategoryRepository:
 
     async def get_by_id(self, category_id: UUID) -> AcademicItemCategory | None:
         result = await self._session.execute(
-            select(AcademicItemCategory).where(AcademicItemCategory.uuid == category_id)
+            select(AcademicItemCategory).where(
+                AcademicItemCategory.uuid == category_id,
+                AcademicItemCategory.deleted_at.is_(None),
+            )
         )
         return result.scalar_one_or_none()
 
     async def list(self, *, limit: int, offset: int) -> list[AcademicItemCategory]:
         stmt = (
             select(AcademicItemCategory)
+            .where(AcademicItemCategory.deleted_at.is_(None))
             .order_by(AcademicItemCategory.name.asc())
             .limit(limit)
             .offset(offset)
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
-
-    async def delete(self, category: AcademicItemCategory) -> None:
-        await self._session.delete(category)
 
 
 class CategoryTypeRepository:
@@ -52,7 +53,8 @@ class CategoryTypeRepository:
     async def get_by_id(self, type_id: UUID) -> AcademicItemCategoryType | None:
         result = await self._session.execute(
             select(AcademicItemCategoryType).where(
-                AcademicItemCategoryType.uuid == type_id
+                AcademicItemCategoryType.uuid == type_id,
+                AcademicItemCategoryType.deleted_at.is_(None),
             )
         )
         return result.scalar_one_or_none()
@@ -60,7 +62,9 @@ class CategoryTypeRepository:
     async def list(
         self, *, category_id: UUID | None, limit: int, offset: int
     ) -> list[AcademicItemCategoryType]:
-        stmt = select(AcademicItemCategoryType)
+        stmt = select(AcademicItemCategoryType).where(
+            AcademicItemCategoryType.deleted_at.is_(None)
+        )
         if category_id is not None:
             stmt = stmt.where(
                 AcademicItemCategoryType.academic_item_category_id == category_id
@@ -72,6 +76,3 @@ class CategoryTypeRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
-
-    async def delete(self, category_type: AcademicItemCategoryType) -> None:
-        await self._session.delete(category_type)

@@ -1,19 +1,25 @@
 """Subject use cases (CRUD scoped to the owner)."""
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.academic_items.infrastructure.models import AcademicItem
 from app.modules.audit.application.recorder import (
     AuditRecorder,
     entity_snapshot,
     jsonable,
 )
 from app.modules.audit.domain.entities import AuditAction
+from app.modules.documents.infrastructure.models import Document
+from app.modules.plan_modules.infrastructure.models import Module
 from app.modules.subjects.domain.exceptions import SubjectNotFoundError
 from app.modules.subjects.infrastructure.models import Subject
 from app.modules.subjects.infrastructure.repository import SubjectRepository
+from app.modules.teaching_plans.infrastructure.models import Plan
+from app.shared.db.soft_delete import cascade_soft_delete
 
 _ENTITY = "subject"
 
@@ -79,7 +85,7 @@ class SubjectService:
         return subject
 
     async def delete(self, *, user_id: UUID, subject_id: UUID) -> None:
-        """Delete a subject."""
+        """Soft-delete a subject and cascade to its plans/modules/items/documents."""
         subject = await self.get(user_id=user_id, subject_id=subject_id)
         self._audit.record(
             action=AuditAction.DELETE,
@@ -87,5 +93,25 @@ class SubjectService:
             entity_id=subject.uuid,
             changes=entity_snapshot(subject),
         )
-        await self._repo.delete(subject)
+        now = datetime.now(UTC)
+        subject.deleted_at = now
+
+        plan_ids = await cascade_soft_delete(
+            self._session, Plan, Plan.subject_id == subject.uuid, now
+        )
+        if plan_ids:
+            module_ids = await cascade_soft_delete(
+                self._session, Module, Module.plan_id.in_(plan_ids), now
+            )
+            if module_ids:
+                await cascade_soft_delete(
+                    self._session,
+                    AcademicItem,
+                    AcademicItem.module_id.in_(module_ids),
+                    now,
+                )
+        await cascade_soft_delete(
+            self._session, Document, Document.subject_id == subject.uuid, now
+        )
+
         await self._session.commit()

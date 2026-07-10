@@ -1,16 +1,19 @@
 """Teaching plan use cases (CRUD scoped to the owner)."""
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.academic_items.infrastructure.models import AcademicItem
 from app.modules.audit.application.recorder import (
     AuditRecorder,
     entity_snapshot,
     jsonable,
 )
 from app.modules.audit.domain.entities import AuditAction
+from app.modules.plan_modules.infrastructure.models import Module
 from app.modules.subjects.infrastructure.repository import SubjectRepository
 from app.modules.teaching_plans.domain.exceptions import (
     InvalidSubjectError,
@@ -18,6 +21,7 @@ from app.modules.teaching_plans.domain.exceptions import (
 )
 from app.modules.teaching_plans.infrastructure.models import Plan
 from app.modules.teaching_plans.infrastructure.repository import PlanRepository
+from app.shared.db.soft_delete import cascade_soft_delete
 
 _ENTITY = "plan"
 
@@ -92,7 +96,7 @@ class PlanService:
         return plan
 
     async def delete(self, *, user_id: UUID, plan_id: UUID) -> None:
-        """Delete a plan."""
+        """Soft-delete a plan and cascade to its modules/academic items."""
         plan = await self.get(user_id=user_id, plan_id=plan_id)
         self._audit.record(
             action=AuditAction.DELETE,
@@ -100,5 +104,15 @@ class PlanService:
             entity_id=plan.uuid,
             changes=entity_snapshot(plan),
         )
-        await self._repo.delete(plan)
+        now = datetime.now(UTC)
+        plan.deleted_at = now
+
+        module_ids = await cascade_soft_delete(
+            self._session, Module, Module.plan_id == plan.uuid, now
+        )
+        if module_ids:
+            await cascade_soft_delete(
+                self._session, AcademicItem, AcademicItem.module_id.in_(module_ids), now
+            )
+
         await self._session.commit()

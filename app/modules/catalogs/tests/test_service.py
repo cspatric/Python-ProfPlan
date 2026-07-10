@@ -10,12 +10,23 @@ from app.modules.catalogs.domain.exceptions import ColorNotFoundError, IconNotFo
 from app.modules.catalogs.infrastructure.models import Color, Icon
 
 
+class FakeCascadeResult:
+    def scalars(self) -> "FakeCascadeResult":
+        return self
+
+    def all(self) -> list:
+        return []
+
+
 class FakeSession:
     async def commit(self) -> None:
         pass
 
     async def refresh(self, obj: object) -> None:
         pass
+
+    async def execute(self, *args: object, **kwargs: object) -> FakeCascadeResult:
+        return FakeCascadeResult()
 
 
 class FakeIconRepository:
@@ -28,13 +39,12 @@ class FakeIconRepository:
         self.items[icon.uuid] = icon
 
     async def get_by_id(self, icon_id: UUID) -> Icon | None:
-        return self.items.get(icon_id)
+        icon = self.items.get(icon_id)
+        return None if icon is None or icon.deleted_at else icon
 
     async def list(self, *, limit: int, offset: int) -> list[Icon]:
-        return list(self.items.values())[offset : offset + limit]
-
-    async def delete(self, icon: Icon) -> None:
-        self.items.pop(icon.uuid, None)
+        active = [i for i in self.items.values() if not i.deleted_at]
+        return active[offset : offset + limit]
 
 
 class FakeColorRepository:
@@ -47,13 +57,12 @@ class FakeColorRepository:
         self.items[color.uuid] = color
 
     async def get_by_id(self, color_id: UUID) -> Color | None:
-        return self.items.get(color_id)
+        color = self.items.get(color_id)
+        return None if color is None or color.deleted_at else color
 
     async def list(self, *, limit: int, offset: int) -> list[Color]:
-        return list(self.items.values())[offset : offset + limit]
-
-    async def delete(self, color: Color) -> None:
-        self.items.pop(color.uuid, None)
+        active = [c for c in self.items.values() if not c.deleted_at]
+        return active[offset : offset + limit]
 
 
 def _icon_data() -> dict[str, Any]:
@@ -94,7 +103,10 @@ async def test_update_and_delete_icon() -> None:
     assert updated.name == "Algebra"
 
     await service.delete(icon_id=created.uuid)
-    assert created.uuid not in repo.items
+    assert created.uuid in repo.items
+    assert created.deleted_at is not None
+    with pytest.raises(IconNotFoundError):
+        await service.get(icon_id=created.uuid)
 
 
 # --------------------------------------------------------------------------- #
@@ -127,4 +139,7 @@ async def test_update_and_delete_color() -> None:
     assert updated.name == "Pastel Rose"
 
     await service.delete(color_id=created.uuid)
-    assert created.uuid not in repo.items
+    assert created.uuid in repo.items
+    assert created.deleted_at is not None
+    with pytest.raises(ColorNotFoundError):
+        await service.get(color_id=created.uuid)

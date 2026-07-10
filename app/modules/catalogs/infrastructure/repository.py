@@ -18,16 +18,21 @@ class IconRepository:
         self._session.add(icon)
 
     async def get_by_id(self, icon_id: UUID) -> Icon | None:
-        result = await self._session.execute(select(Icon).where(Icon.uuid == icon_id))
+        result = await self._session.execute(
+            select(Icon).where(Icon.uuid == icon_id, Icon.deleted_at.is_(None))
+        )
         return result.scalar_one_or_none()
 
     async def list(self, *, limit: int, offset: int) -> list[Icon]:
-        stmt = select(Icon).order_by(Icon.name.asc()).limit(limit).offset(offset)
+        stmt = (
+            select(Icon)
+            .where(Icon.deleted_at.is_(None))
+            .order_by(Icon.name.asc())
+            .limit(limit)
+            .offset(offset)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
-
-    async def delete(self, icon: Icon) -> None:
-        await self._session.delete(icon)
 
 
 class ColorRepository:
@@ -41,14 +46,17 @@ class ColorRepository:
 
     async def get_by_id(self, color_id: UUID) -> Color | None:
         result = await self._session.execute(
-            select(Color).where(Color.uuid == color_id)
+            select(Color).where(Color.uuid == color_id, Color.deleted_at.is_(None))
         )
         return result.scalar_one_or_none()
 
     async def list(self, *, limit: int, offset: int) -> list[Color]:
-        stmt = select(Color).order_by(Color.name.asc()).limit(limit).offset(offset)
+        stmt = (
+            select(Color)
+            .where(Color.deleted_at.is_(None))
+            .order_by(Color.name.asc())
+            .limit(limit)
+            .offset(offset)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
-
-    async def delete(self, color: Color) -> None:
-        await self._session.delete(color)

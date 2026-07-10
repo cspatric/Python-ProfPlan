@@ -38,13 +38,12 @@ class FakeCategoryRepository:
         self.items[category.uuid] = category
 
     async def get_by_id(self, category_id: UUID) -> AcademicItemCategory | None:
-        return self.items.get(category_id)
+        category = self.items.get(category_id)
+        return None if category is None or category.deleted_at else category
 
     async def list(self, *, limit: int, offset: int) -> list[AcademicItemCategory]:
-        return list(self.items.values())[offset : offset + limit]
-
-    async def delete(self, category: AcademicItemCategory) -> None:
-        self.items.pop(category.uuid, None)
+        active = [c for c in self.items.values() if not c.deleted_at]
+        return active[offset : offset + limit]
 
 
 class FakeCategoryTypeRepository:
@@ -57,7 +56,10 @@ class FakeCategoryTypeRepository:
         self.items[category_type.uuid] = category_type
 
     async def get_by_id(self, type_id: UUID) -> AcademicItemCategoryType | None:
-        return self.items.get(type_id)
+        category_type = self.items.get(type_id)
+        if category_type is None or category_type.deleted_at:
+            return None
+        return category_type
 
     async def list(
         self, *, category_id: UUID | None, limit: int, offset: int
@@ -65,12 +67,10 @@ class FakeCategoryTypeRepository:
         values = [
             t
             for t in self.items.values()
-            if category_id is None or t.academic_item_category_id == category_id
+            if (category_id is None or t.academic_item_category_id == category_id)
+            and not t.deleted_at
         ]
         return values[offset : offset + limit]
-
-    async def delete(self, category_type: AcademicItemCategoryType) -> None:
-        self.items.pop(category_type.uuid, None)
 
 
 def _category_data() -> dict[str, Any]:
@@ -106,7 +106,10 @@ async def test_update_and_delete_category() -> None:
     assert updated.name == "Tests"
 
     await service.delete(category_id=created.uuid)
-    assert created.uuid not in repo.items
+    assert created.uuid in repo.items
+    assert created.deleted_at is not None
+    with pytest.raises(CategoryNotFoundError):
+        await service.get(category_id=created.uuid)
 
 
 # --------------------------------------------------------------------------- #

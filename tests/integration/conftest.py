@@ -50,7 +50,7 @@ _TABLES = (
     "subjects, plans, modules, academic_items, "
     "academic_item_category, academic_item_category_types, "
     "document_format, document, document_content, chunks, "
-    "plan_generation, plan_document, ai_provider"
+    "plan_generation, plan_document, ai_provider, icons, colors"
 )
 
 

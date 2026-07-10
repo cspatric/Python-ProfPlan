@@ -19,10 +19,11 @@ class ModuleRepository:
         self._session.add(module)
 
     async def get_by_id(self, module_id: UUID, user_id: UUID) -> Module | None:
-        """Return a module by id, scoped to its owner."""
+        """Return a non-deleted module by id, scoped to its owner."""
         stmt = select(Module).where(
             Module.uuid == module_id,
             Module.user_id == user_id,
+            Module.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
@@ -30,17 +31,17 @@ class ModuleRepository:
     async def list_by_plan(
         self, plan_id: UUID, user_id: UUID, *, limit: int, offset: int
     ) -> list[Module]:
-        """Return a plan's modules, ordered by start date."""
+        """Return a plan's non-deleted modules, ordered by start date."""
         stmt = (
             select(Module)
-            .where(Module.plan_id == plan_id, Module.user_id == user_id)
+            .where(
+                Module.plan_id == plan_id,
+                Module.user_id == user_id,
+                Module.deleted_at.is_(None),
+            )
             .order_by(Module.start_at.asc())
             .limit(limit)
             .offset(offset)
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
-
-    async def delete(self, module: Module) -> None:
-        """Delete a module."""
-        await self._session.delete(module)

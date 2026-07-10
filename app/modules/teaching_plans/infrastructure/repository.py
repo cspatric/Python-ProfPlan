@@ -19,33 +19,32 @@ class PlanRepository:
         self._session.add(plan)
 
     async def get_by_id(self, plan_id: UUID, user_id: UUID) -> Plan | None:
-        """Return a plan by id, scoped to its owner."""
+        """Return a non-deleted plan by id, scoped to its owner."""
         stmt = select(Plan).where(
             Plan.uuid == plan_id,
             Plan.user_id == user_id,
+            Plan.deleted_at.is_(None),
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_for_processing(self, plan_id: UUID) -> Plan | None:
-        """Return a plan by id without owner scoping (worker use)."""
-        result = await self._session.execute(select(Plan).where(Plan.uuid == plan_id))
+        """Return a non-deleted plan by id without owner scoping (worker use)."""
+        result = await self._session.execute(
+            select(Plan).where(Plan.uuid == plan_id, Plan.deleted_at.is_(None))
+        )
         return result.scalar_one_or_none()
 
     async def list_by_user(
         self, user_id: UUID, *, limit: int, offset: int
     ) -> list[Plan]:
-        """Return the user's plans, most recent first."""
+        """Return the user's non-deleted plans, most recent first."""
         stmt = (
             select(Plan)
-            .where(Plan.user_id == user_id)
+            .where(Plan.user_id == user_id, Plan.deleted_at.is_(None))
             .order_by(Plan.created_at.desc())
             .limit(limit)
             .offset(offset)
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
-
-    async def delete(self, plan: Plan) -> None:
-        """Delete a plan."""
-        await self._session.delete(plan)
