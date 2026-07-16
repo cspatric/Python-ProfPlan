@@ -34,8 +34,20 @@ class PlannedModule(BaseModel):
 
 
 class Roadmap(BaseModel):
-    """The full plan the planner agent produced."""
+    """The full plan the planner agent produced.
 
+    ``reasoning`` comes first on purpose: the planner has to emit it before any
+    module, which is what gives it room to think (how many classes the period
+    holds, what the teacher asked for) instead of committing to a structure on
+    the first token. It is kept out of the API response — it is there for the
+    model, and for us when a roadmap comes out wrong.
+    """
+
+    reasoning: str = Field(
+        min_length=1,
+        max_length=4000,
+        description="how the planner arrived at this structure (written first)",
+    )
     summary: str = Field(min_length=1, max_length=2000)
     modules: list[PlannedModule] = Field(min_length=1)
 

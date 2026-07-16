@@ -15,6 +15,7 @@ from app.modules.generation.domain.entities import (
     GenerationRunStatus,
 )
 from app.modules.generation.domain.exceptions import GenerationNotFoundError
+from app.modules.generation.domain.plan_brief import PlanBrief, build_plan_brief
 from app.modules.generation.domain.prompts import (
     GENERATOR_SYSTEM,
     build_item_prompt,
@@ -36,10 +37,12 @@ from app.modules.teaching_plans.infrastructure.models import Plan
 from app.modules.teaching_plans.infrastructure.repository import PlanRepository
 
 
-def _plan_info(plan: Plan) -> str:
-    return (
-        f"Period: {plan.starts_at} to {plan.ends_at}. "
-        f"{plan.class_per_week} classes/week, {plan.class_duration} min each."
+def _brief(plan: Plan) -> PlanBrief:
+    return build_plan_brief(
+        starts_at=plan.starts_at,
+        ends_at=plan.ends_at,
+        class_per_week=plan.class_per_week,
+        class_duration=plan.class_duration,
     )
 
 
@@ -157,15 +160,18 @@ class GenerationService:
         plan_info: str,
         teacher_input: str | None = None,
         content_ids: list[UUID] | None = None,
+        classes: int | None = None,
     ) -> Roadmap:
         """Run the planner agent (the synchronous AI call) and validate it.
 
         Validates subject ownership first (no AI tokens burned for an invalid
         subject) and anchors the planner on the subject's name. ``content_ids``
-        scopes the RAG context to the documents selected for the plan. Raises
-        PlannerError (502) / AllProvidersFailedError (503) on failure — callers
-        run this BEFORE persisting anything, so an AI failure surfaces as a
-        real error and leaves no orphan rows behind.
+        scopes the RAG context to the documents selected for the plan;
+        ``classes`` is how many classes the period holds, which lets the
+        roadmap evaluation check the plan against it. Raises PlannerError (502)
+        / AllProvidersFailedError (503) on failure — callers run this BEFORE
+        persisting anything, so an AI failure surfaces as a real error and
+        leaves no orphan rows behind.
         """
         subject_name = await self._subject_name(subject_id, user_id)
         disabled = await self._providers.disabled_names()
@@ -176,6 +182,7 @@ class GenerationService:
             teacher_input=teacher_input or self.default_input(),
             plan_info=f"Subject: {subject_name}. {plan_info}",
             content_ids=content_ids,
+            classes=classes,
             disabled=disabled,
         )
 
@@ -189,12 +196,14 @@ class GenerationService:
         content_ids = (
             await self._plan_docs.content_ids_for_plan(plan_id, user_id) or None
         )
+        brief = _brief(plan)
         roadmap = await self.plan_roadmap(
             user_id=user_id,
             subject_id=plan.subject_id,
-            plan_info=_plan_info(plan),
+            plan_info=brief.info,
             teacher_input=teacher_input,
             content_ids=content_ids,
+            classes=brief.classes,
         )
         return await self.materialize(
             user_id=user_id,
@@ -294,7 +303,7 @@ class GenerationService:
         if plan is not None:
             subject = await self._subjects.get_by_id(plan.subject_id, item.user_id)
             subject_name = f"Subject: {subject.name}. " if subject else ""
-            plan_info = f"{subject_name}{_plan_info(plan)}"
+            plan_info = f"{subject_name}{_brief(plan).info}"
             content_ids = (
                 await self._plan_docs.content_ids_for_plan(plan.uuid, item.user_id)
                 or None

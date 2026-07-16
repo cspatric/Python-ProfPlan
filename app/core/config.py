@@ -102,6 +102,13 @@ class Settings(BaseSettings):
     # false, POST /plans creates a plain plan with no AI call — used by CI and
     # any environment without an LLM configured.
     plan_generation_enabled: bool = True
+    # Roadmap evaluation (generation/domain/roadmap_eval.py). Code checks are
+    # free and always run; the LLM judge only runs when they flag something or
+    # the retrieved context was weak, so a clean plan still costs one call.
+    planner_eval_enabled: bool = True
+    # Cosine distance (lower is closer) above which the closest retrieved chunk
+    # is too far from the request to have grounded the plan — worth a judge.
+    planner_weak_context_distance: float = 0.45
     llm_circuit_failure_threshold: int = 3
     llm_circuit_reset_seconds: float = 30.0
     # Caps concurrent outbound calls process-wide so a burst of /ai/ask

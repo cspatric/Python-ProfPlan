@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query, Request, Response, status
 from app.api.rate_limit import expensive_limit
 from app.core.config import get_settings
 from app.modules.auth.presentation.dependencies import CurrentUser
+from app.modules.generation.domain.plan_brief import build_plan_brief
 from app.modules.generation.presentation.dependencies import GenerationServiceDep
 from app.modules.generation.presentation.schemas import build_generation_response
 from app.modules.teaching_plans.presentation.dependencies import PlanServiceDep
@@ -68,17 +69,20 @@ async def create_plan(
         )
         return PlanCreatedResponse.model_validate(plan)
 
-    plan_info = (
-        f"Period: {payload.starts_at} to {payload.ends_at}. "
-        f"{payload.class_per_week} classes/week, {payload.class_duration} min each."
+    brief = build_plan_brief(
+        starts_at=payload.starts_at,
+        ends_at=payload.ends_at,
+        class_per_week=payload.class_per_week,
+        class_duration=payload.class_duration,
     )
     teacher_input = payload.input or generation_service.default_input()
     roadmap = await generation_service.plan_roadmap(
         user_id=user.uuid,
         subject_id=payload.subject_id,
-        plan_info=plan_info,
+        plan_info=brief.info,
         teacher_input=teacher_input,
         content_ids=content_ids,
+        classes=brief.classes,
     )
 
     # 2) Persist plan + document links + roadmap, then fan out to workers.
