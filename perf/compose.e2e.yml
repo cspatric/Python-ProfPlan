@@ -1,0 +1,62 @@
+# Load-test override: full E2E (plan generation + Celery) with a MOCK LLM.
+#
+#   docker compose -f docker-compose.yml -f perf/compose.e2e.yml --profile dev up -d api worker mockllm
+#
+# What it changes, and why each change is safe to reason from:
+# - Every paid provider key is BLANKED: a keyless provider raises
+#   ProviderUnavailableError before any network call, so the only reachable
+#   provider is ollama — whose base_url points at the mock below. The harness
+#   additionally verifies this with a canary probe before generating load.
+# - OLLAMA_BASE_URL -> mockllm: no model runs anywhere; chat + embeddings are
+#   canned ~1ms responses (see perf/mock_llm.py).
+# - --workers 4 / 4 CPUs: the capacity config measured in perf/RESULTS.md.
+# - DB pools shrunk (4 procs x (6+10) = 64 conns) so four uvicorn workers fit
+#   under Postgres max_connections=100 with room for the Celery worker.
+# - ACCESS_TOKEN_EXPIRE_MINUTES=240: the 1.6M-request run takes >15 min, and
+#   pooled sessions must outlive it. Latency of auth checks is unaffected.
+services:
+  api:
+    command:
+      ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000",
+       "--no-access-log", "--workers", "4"]
+    environment:
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+      GEMINI_API_KEY: ""
+      OLLAMA_BASE_URL: "http://mockllm:9999"
+      ACCESS_TOKEN_EXPIRE_MINUTES: "600"
+      DB_POOL_SIZE: "6"
+      DB_MAX_OVERFLOW: "10"
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 2g
+
+  worker:
+    environment:
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+      GEMINI_API_KEY: ""
+      OLLAMA_BASE_URL: "http://mockllm:9999"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+
+  mockllm:
+    image: profplan-backend:latest
+    profiles: ["dev"]
+    command:
+      ["uvicorn", "--app-dir", "/mnt/perf", "mock_llm:app",
+       "--host", "0.0.0.0", "--port", "9999", "--no-access-log"]
+    volumes:
+      - ./perf:/mnt/perf:ro
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256m
