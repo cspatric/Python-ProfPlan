@@ -14,6 +14,10 @@ from functools import lru_cache
 
 from app.core.config import get_settings
 from app.infrastructure.redis.client import redis_client
+from app.infrastructure.telemetry.metrics import (
+    LLM_ALL_PROVIDERS_FAILED,
+    LLM_REQUESTS,
+)
 from app.modules.ai.domain.exceptions import AllProvidersFailedError
 from app.modules.ai.domain.interfaces import LLMProvider
 from app.modules.ai.infrastructure.gateway.circuit_breaker import CircuitBreaker
@@ -66,20 +70,25 @@ class LLMGateway:
             for provider, breaker in self._providers:
                 if provider.name in disabled:
                     errors[provider.name] = "disabled"
+                    LLM_REQUESTS.labels(provider.name, "disabled").inc()
                     continue
                 if not await breaker.allow():
                     errors[provider.name] = "circuit_open"
+                    LLM_REQUESTS.labels(provider.name, "circuit_open").inc()
                     continue
                 try:
                     text = await provider.generate(prompt, system=system)
                 except Exception as exc:  # noqa: BLE001 — any failure → next provider
                     await breaker.record_failure()
                     errors[provider.name] = type(exc).__name__
+                    LLM_REQUESTS.labels(provider.name, "failed").inc()
                     logger.warning("LLM provider %s failed: %s", provider.name, exc)
                     continue
                 await breaker.record_success()
+                LLM_REQUESTS.labels(provider.name, "success").inc()
                 return LLMResult(provider=provider.name, text=text)
 
+            LLM_ALL_PROVIDERS_FAILED.inc()
             raise AllProvidersFailedError(errors)
 
     async def provider_states(self) -> list[tuple[str, bool]]:
@@ -90,14 +99,18 @@ class LLMGateway:
         ]
 
 
-@lru_cache
-def get_gateway() -> LLMGateway:
-    """Build the shared gateway (Redis-backed breaker state, shared process-wide)."""
+def build_gateway(redis) -> LLMGateway:
+    """Build a gateway whose breaker state lives on the given Redis client.
+
+    Celery tasks pass a per-run client (see ``new_redis_client``): breaker
+    *state* still coordinates globally through Redis keys, but the connection
+    belongs to the task's own event loop.
+    """
     settings = get_settings()
 
     def _breaker(name: str) -> CircuitBreaker:
         return CircuitBreaker(
-            redis_client,
+            redis,
             name=name,
             failure_threshold=settings.llm_circuit_failure_threshold,
             reset_seconds=settings.llm_circuit_reset_seconds,
@@ -116,3 +129,9 @@ def get_gateway() -> LLMGateway:
         (ollama, _breaker(ollama.name)),
     ]
     return LLMGateway(providers, max_concurrency=settings.llm_max_concurrency)
+
+
+@lru_cache
+def get_gateway() -> LLMGateway:
+    """The shared API-process gateway (single long-lived event loop)."""
+    return build_gateway(redis_client)

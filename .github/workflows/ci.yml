@@ -66,6 +66,33 @@ jobs:
       - name: Integration tests
         run: uv run pytest -m integration tests/integration
 
+  monitoring:
+    name: Monitoring config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # A broken rule file means Prometheus starts with no alerts at all, which
+      # fails silently. Catch it here instead of in production.
+      - name: Prometheus rules and config
+        run: |
+          docker run --rm -v "$PWD/docker/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool prom/prometheus:v3.13.0 \
+            check rules /etc/prometheus/rules/profplan.yml
+          docker run --rm -v "$PWD/docker/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool prom/prometheus:v3.13.0 \
+            check config /etc/prometheus/prometheus.yml
+      - name: Alertmanager config
+        run: |
+          docker run --rm -v "$PWD/docker/alertmanager:/etc/alertmanager:ro" \
+            --entrypoint amtool prom/alertmanager:v0.28.1 \
+            check-config /etc/alertmanager/alertmanager.yml
+      - name: Grafana dashboards are valid JSON
+        run: |
+          for f in docker/grafana/dashboards/*.json; do
+            python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f"
+            echo "ok: $f"
+          done
+
   security:
     name: Security scan
     runs-on: ubuntu-latest

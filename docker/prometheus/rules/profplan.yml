@@ -1,0 +1,193 @@
+# Alert rules for ProfPlan.
+#
+# Every rule here answers "would I want to be woken up by this?". Warnings are
+# things to look at during the day; criticals mean users are affected right now.
+# Each one carries a runbook annotation pointing at docs/observability/ALERTS.md,
+# because an alert nobody knows how to act on is just noise.
+#
+# Validate after editing:
+#   docker run --rm -v "$PWD/docker/prometheus:/etc/prometheus" \
+#     --entrypoint promtool prom/prometheus:v3.13.0 check rules /etc/prometheus/rules/profplan.yml
+
+groups:
+  # ---------------------------------------------------------------- API
+  - name: profplan-api
+    rules:
+      - alert: ApiDown
+        expr: up{job="api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API is not answering scrapes"
+          description: >-
+            Prometheus cannot reach the API's /metrics endpoint. Either the
+            container is down, or it is so saturated it cannot serve a scrape.
+          runbook: "docs/observability/ALERTS.md#apidown"
+
+      - alert: HighServerErrorRate
+        # Ratio, not a count: 5 errors per second matters at 50 req/s and is
+        # noise at 5000. clamp_min keeps it from dividing by zero when idle.
+        expr: >-
+          sum(rate(http_requests_total{job="api",status="5xx"}[5m]))
+          /
+          clamp_min(sum(rate(http_requests_total{job="api"}[5m])), 0.001)
+          > 0.02
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "More than 2% of requests are failing with 5xx"
+          description: >-
+            {{ $value | humanizePercentage }} of requests over the last 5
+            minutes returned a server error.
+          runbook: "docs/observability/ALERTS.md#highservererrorrate"
+
+      - alert: LatencyP95Degraded
+        # The high-resolution histogram has no handler label, so this is the
+        # whole API. The load test baseline is p95 545ms at the recommended
+        # ceiling, so sustained p95 above 1s means we are past it.
+        expr: >-
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(http_request_duration_highr_seconds_bucket{job="api"}[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 latency above 1s for 10 minutes"
+          description: "p95 is {{ $value | humanizeDuration }}."
+          runbook: "docs/observability/ALERTS.md#latencyp95degraded"
+
+      - alert: DependencyDown
+        expr: profplan_dependency_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.dependency }} is unreachable from the API"
+          description: >-
+            The background probe could not reach {{ $labels.dependency }} for
+            2 minutes. /ready is returning 503 and the API is degraded.
+          runbook: "docs/observability/ALERTS.md#dependencydown"
+
+  # ---------------------------------------------------------------- async
+  - name: profplan-async
+    rules:
+      - alert: CeleryQueueBacklog
+        expr: profplan_celery_queue_depth > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} tasks waiting in queue {{ $labels.queue }}"
+          description: >-
+            Work is arriving faster than the workers drain it. Documents stay
+            in "processing" and generated items stay "pending".
+          runbook: "docs/observability/ALERTS.md#celeryqueuebacklog"
+
+      - alert: CeleryQueueStalled
+        # Depth alone can be a busy period. Depth with nothing succeeding is a
+        # stuck or dead worker. Empty vector when Flower is not scraped, so
+        # this simply does not fire instead of firing wrongly.
+        expr: >-
+          profplan_celery_queue_depth > 0
+          and on()
+          sum(rate(flower_events_total{type="task-succeeded"}[15m])) == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Queue is not empty and no task has succeeded in 15 minutes"
+          description: "The worker is stuck, dead, or crash-looping."
+          runbook: "docs/observability/ALERTS.md#celeryqueuestalled"
+
+      - alert: CeleryTaskFailures
+        expr: sum(rate(flower_events_total{type="task-failed"}[10m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery tasks are failing after their retries"
+          description: >-
+            {{ $value | printf "%.2f" }} failures per second. These are tasks
+            that already exhausted their backoff, so a document or a generated
+            item is now FAILED.
+          runbook: "docs/observability/ALERTS.md#celerytaskfailures"
+
+  # ---------------------------------------------------------------- AI
+  - name: profplan-ai
+    rules:
+      - alert: LlmAllProvidersFailing
+        # The whole fallback chain, local Ollama included, came back empty.
+        # Any occurrence is worth knowing about; three in 15 minutes is a fire.
+        expr: increase(profplan_llm_all_providers_failed_total[15m]) > 3
+        labels:
+          severity: critical
+        annotations:
+          summary: "The LLM fallback chain is exhausting every provider"
+          description: >-
+            {{ $value | printf "%.0f" }} generations in 15 minutes failed on
+            all four providers. Plan creation is returning 503.
+          runbook: "docs/observability/ALERTS.md#llmallprovidersfailing"
+
+      - alert: LlmProviderCircuitOpen
+        expr: increase(profplan_llm_requests_total{outcome="circuit_open"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker open for {{ $labels.provider }}"
+          description: >-
+            Requests are skipping {{ $labels.provider }} and falling through to
+            the next provider. Answers still work, they cost more and are slower.
+          runbook: "docs/observability/ALERTS.md#llmprovidercircuitopen"
+
+  # ---------------------------------------------------------------- host
+  - name: profplan-host
+    rules:
+      - alert: HostDiskFillingUp
+        expr: >-
+          node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+          /
+          node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
+          < 0.10
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Less than 10% disk free on {{ $labels.instance }}"
+          description: >-
+            Postgres, MinIO and the Loki/Prometheus volumes all write here. A
+            full disk stops writes and can corrupt them.
+          runbook: "docs/observability/ALERTS.md#hostdiskfillingup"
+
+      - alert: HostMemoryPressure
+        expr: >-
+          node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Less than 10% memory available on {{ $labels.instance }}"
+          description: "The next allocation spike will start OOM-killing containers."
+          runbook: "docs/observability/ALERTS.md#hostmemorypressure"
+
+  # ---------------------------------------------------------------- meta
+  - name: profplan-meta
+    rules:
+      - alert: Watchdog
+        # Always firing, on purpose. It proves the whole path is alive:
+        # rule evaluation, Alertmanager, and the receiver. If this stops
+        # arriving, the alerting pipeline itself is broken and every other
+        # rule here is silently useless. Routed to the null receiver.
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Alerting pipeline heartbeat"
+          description: >-
+            This alert always fires. Its absence is the signal, not its
+            presence.
+          runbook: "docs/observability/ALERTS.md#watchdog"

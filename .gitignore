@@ -71,3 +71,11 @@ data/
 postgres-data/
 minio-data/
 redis-data/
+
+# Alertmanager receiver secret (see docker/alertmanager/alertmanager.yml)
+docker/alertmanager/slack_api_url
+
+# Built documents. The LaTeX source and its parts are versioned; the PDF is
+# two `pdflatex` runs away (see docs/study/README.md) and would otherwise
+# change wholesale on every rebuild.
+docs/study/*.pdf

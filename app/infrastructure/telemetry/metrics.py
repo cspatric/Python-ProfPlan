@@ -1,0 +1,129 @@
+"""Application metrics beyond the HTTP defaults, plus the probe that fills them.
+
+``prometheus-fastapi-instrumentator`` already exports request rate, latency and
+status codes. The three things it cannot see are exactly the three worth being
+paged about, so they are defined here on the default registry and therefore
+appear on the same ``/metrics`` endpoint:
+
+* whether our dependencies answer (``/ready`` tells you this, but only when
+  someone calls it, and Prometheus scrapes ``/metrics``, not ``/ready``);
+* how many messages are waiting in the Celery queue;
+* how the LLM fallback chain is behaving, per provider.
+
+The dependency and queue gauges are filled by a background probe started in the
+app's lifespan. It is deliberately cheap (a ``SELECT 1``, a ``PING`` and an
+``LLEN``) and its failures never propagate: a probe that cannot reach a
+dependency records a zero, which is the whole point.
+"""
+
+import asyncio
+import contextlib
+import logging
+
+from prometheus_client import Counter, Gauge
+from redis.asyncio import from_url
+from sqlalchemy import text
+
+from app.core.config import get_settings
+
+logger = logging.getLogger("app.metrics")
+
+# multiprocess_mode matters as soon as UVICORN_WORKERS > 1: every worker runs
+# its own probe, so the same gauge has one value per process. "livemostrecent"
+# reports the newest sample from a process that is still alive, which is the
+# only reading that answers "is the database up right now". "max" would hide an
+# outage the moment one worker still believed things were fine.
+DEPENDENCY_UP = Gauge(
+    "profplan_dependency_up",
+    "1 when the dependency answered its last probe, 0 when it did not.",
+    ["dependency"],
+    multiprocess_mode="livemostrecent",
+)
+
+CELERY_QUEUE_DEPTH = Gauge(
+    "profplan_celery_queue_depth",
+    "Messages waiting to be picked up by a Celery worker.",
+    ["queue"],
+    multiprocess_mode="livemostrecent",
+)
+
+LLM_REQUESTS = Counter(
+    "profplan_llm_requests_total",
+    "LLM gateway attempts, by provider and outcome.",
+    ["provider", "outcome"],
+)
+
+LLM_ALL_PROVIDERS_FAILED = Counter(
+    "profplan_llm_all_providers_failed_total",
+    "Generations where every provider in the fallback chain failed.",
+)
+
+
+async def _probe_database() -> None:
+    # Imported here, not at module scope: the worker imports this module for the
+    # LLM counters and has no business building the API's pooled engine.
+    from app.infrastructure.database.session import engine
+
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        DEPENDENCY_UP.labels(dependency="database").set(1)
+    except Exception as exc:  # noqa: BLE001 — a failed probe is a measurement
+        DEPENDENCY_UP.labels(dependency="database").set(0)
+        logger.warning("dependency probe failed: database (%s)", exc)
+
+
+async def _probe_redis() -> None:
+    from app.infrastructure.redis.client import redis_client
+
+    try:
+        await redis_client.ping()
+        DEPENDENCY_UP.labels(dependency="redis").set(1)
+    except Exception as exc:  # noqa: BLE001
+        DEPENDENCY_UP.labels(dependency="redis").set(0)
+        logger.warning("dependency probe failed: redis (%s)", exc)
+
+
+async def _probe_queue_depth(broker, queues: list[str]) -> None:
+    """Queue depth is the length of the broker list Celery pushes onto."""
+    for queue in queues:
+        try:
+            depth = await broker.llen(queue)
+            CELERY_QUEUE_DEPTH.labels(queue=queue).set(depth)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("queue depth probe failed: %s (%s)", queue, exc)
+
+
+async def probe_once(broker, queues: list[str]) -> None:
+    """One round of every probe. Never raises."""
+    await _probe_database()
+    await _probe_redis()
+    await _probe_queue_depth(broker, queues)
+
+
+async def _probe_loop() -> None:
+    settings = get_settings()
+    queues = [q.strip() for q in settings.celery_queues.split(",") if q.strip()]
+    broker = from_url(settings.celery_broker_url, decode_responses=True)
+    try:
+        while True:
+            await probe_once(broker, queues)
+            await asyncio.sleep(settings.metrics_probe_interval_seconds)
+    finally:
+        await broker.aclose()
+
+
+def start_metrics_probe() -> asyncio.Task | None:
+    """Start the background probe, or return None when it is disabled."""
+    if not get_settings().metrics_probe_enabled:
+        return None
+    return asyncio.create_task(_probe_loop(), name="metrics-probe")
+
+
+async def stop_metrics_probe(task: asyncio.Task | None) -> None:
+    """Cancel the probe and wait for it to unwind (shutdown path)."""
+    if task is None:
+        return
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task

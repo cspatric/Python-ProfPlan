@@ -1,5 +1,7 @@
 """Application entrypoint."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Response, status
@@ -22,6 +24,10 @@ from app.core.config import get_settings
 from app.infrastructure.database.session import engine
 from app.infrastructure.redis.client import redis_client
 from app.infrastructure.telemetry.logging import setup_logging
+from app.infrastructure.telemetry.metrics import (
+    start_metrics_probe,
+    stop_metrics_probe,
+)
 from app.infrastructure.telemetry.traces import setup_tracing
 
 settings = get_settings()
@@ -30,7 +36,22 @@ settings = get_settings()
 # before anything else so the whole process logs in one consistent format.
 setup_logging(settings.log_level)
 
-app = FastAPI(title="ProfPlan API")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Run the background metrics probe for the lifetime of the process.
+
+    It fills the dependency and queue-depth gauges the alert rules watch, which
+    nothing else would: Prometheus scrapes /metrics, never /ready.
+    """
+    probe = start_metrics_probe()
+    try:
+        yield
+    finally:
+        await stop_metrics_probe(probe)
+
+
+app = FastAPI(title="ProfPlan API", lifespan=lifespan)
 register_exception_handlers(app)
 
 # NB: Starlette runs the LAST-added middleware first (outermost). They are added
