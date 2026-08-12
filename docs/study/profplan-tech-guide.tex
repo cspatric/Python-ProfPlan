@@ -1,0 +1,171 @@
+% ProfPlan Technology Study Guide
+% Build:  pdflatex profplan-tech-guide.tex   (run twice for the table of contents)
+% Every part lives in parts/*.tex.
+
+\documentclass[11pt,a4paper]{article}
+
+% ─────────────────────────── fonts & page ───────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{charter}                       % serif body, readable at length
+\usepackage[scaled=0.92]{helvet}           % sans for headings and diagrams
+\usepackage[margin=2.3cm,top=2.6cm,bottom=2.4cm]{geometry}
+\usepackage{microtype,parskip}
+\usepackage{booktabs,array,enumitem,graphicx,longtable}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,fit,calc,backgrounds,
+                decorations.pathreplacing,patterns,shadows.blur,shapes.misc}
+\usepackage{pgfplots}\pgfplotsset{compat=1.18}
+\usepackage{listings}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{pdflscape,tabularx,adjustbox}
+\usepackage[hidelinks]{hyperref}
+
+% ─────────────────────────── palette ───────────────────────────
+% Same colors as the architecture diagram, so the guide and the map agree.
+\definecolor{cEdge}{HTML}{64748B}
+\definecolor{cApi}{HTML}{2563EB}
+\definecolor{cAsync}{HTML}{7C3AED}
+\definecolor{cData}{HTML}{0F766E}
+\definecolor{cLLM}{HTML}{EA580C}
+\definecolor{cObs}{HTML}{0D9488}
+\definecolor{cInk}{HTML}{0B1220}
+\definecolor{cMute}{HTML}{5B6675}
+\definecolor{cRule}{HTML}{D9DEE7}
+\definecolor{cPaper}{HTML}{F7F8FA}
+\definecolor{cWarn}{HTML}{B45309}
+
+\hypersetup{colorlinks=true,linkcolor=cApi,urlcolor=cApi,citecolor=cApi}
+
+% ─────────────────────────── headings ───────────────────────────
+\titleformat{\section}[display]
+  {\sffamily\bfseries\Large\color{cInk}}
+  {\sffamily\footnotesize\bfseries\color{cMute}\MakeUppercase{Part \thesection}}
+  {6pt}{\color{cInk}}[{\vspace{2pt}\color{cRule}\titlerule[1.2pt]}]
+\titleformat{\subsection}
+  {\sffamily\bfseries\large\color{cInk}}{\color{cMute}\thesubsection}{0.7em}{}
+\titleformat{\subsubsection}
+  {\sffamily\bfseries\normalsize\color{cInk}}{}{0em}{}
+\titlespacing*{\subsection}{0pt}{16pt}{6pt}
+\titlespacing*{\subsubsection}{0pt}{10pt}{3pt}
+
+\pagestyle{fancy}\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\sffamily\scriptsize\color{cMute}ProfPlan Technology Study Guide}
+\fancyhead[R]{\sffamily\scriptsize\color{cMute}\leftmark}
+\fancyfoot[C]{\sffamily\scriptsize\color{cMute}\thepage}
+
+% ─────────────────────────── code listings ───────────────────────────
+\lstdefinestyle{pp}{
+  basicstyle=\ttfamily\footnotesize\color{cInk},
+  keywordstyle=\color{cApi}\bfseries,
+  commentstyle=\color{cMute}\itshape,
+  stringstyle=\color{cData},
+  backgroundcolor=\color{cPaper},
+  frame=leftline, framesep=6pt, rulecolor=\color{cRule},
+  breaklines=true, breakatwhitespace=false, showstringspaces=false,
+  columns=fullflexible, keepspaces=true, xleftmargin=8pt,
+  literate={→}{{$\rightarrow$}}1 {·}{{\textperiodcentered}}1
+           {á}{{\'a}}1 {ã}{{\~a}}1 {ç}{{\c c}}1 {é}{{\'e}}1,
+}
+\lstset{style=pp}
+
+% Long unbreakable paths in \file/\code: let TeX stretch spaces rather than
+% run into the margin.
+\emergencystretch=3em
+\newcommand{\code}[1]{{\ttfamily\small #1}}
+\newcommand{\file}[1]{{\ttfamily\small\color{cMute}#1}}
+
+% ─────────────────────────── content boxes ───────────────────────────
+% One consistent set of blocks, used for every technology in the guide.
+\newtcolorbox{pitch}{
+  enhanced, breakable, colback=cApi!4, colframe=cApi!55, boxrule=0.9pt,
+  arc=2pt, left=8pt,right=8pt,top=6pt,bottom=6pt,
+  title={\sffamily\bfseries\footnotesize EXPLAIN IT IN 30 SECONDS},
+  fonttitle=\color{white}, coltitle=white, colbacktitle=cApi!75,
+}
+\newtcolorbox{role}{
+  enhanced, breakable, colback=cData!5, colframe=cData!55, boxrule=0.9pt,
+  arc=2pt, left=8pt,right=8pt,top=6pt,bottom=6pt,
+  title={\sffamily\bfseries\footnotesize ROLE IN PROFPLAN},
+  coltitle=white, colbacktitle=cData!80,
+}
+\newtcolorbox{gotcha}{
+  enhanced, breakable, colback=cWarn!6, colframe=cWarn!55, boxrule=0.9pt,
+  arc=2pt, left=8pt,right=8pt,top=6pt,bottom=6pt,
+  title={\sffamily\bfseries\footnotesize GOTCHA, THIS IS WHAT BIT US},
+  coltitle=white, colbacktitle=cWarn!85,
+}
+\newtcolorbox{qabox}{
+  enhanced, breakable, colback=cAsync!4, colframe=cAsync!45, boxrule=0.9pt,
+  arc=2pt, left=8pt,right=8pt,top=6pt,bottom=6pt,
+  title={\sffamily\bfseries\footnotesize QUESTIONS YOU WILL BE ASKED},
+  coltitle=white, colbacktitle=cAsync!70,
+}
+\newcommand{\qa}[2]{\par\smallskip\noindent{\sffamily\bfseries\small #1}\par\nobreak\noindent #2}
+
+% Technology heading: name plus a one-line summary of what it gives you.
+\newcommand{\tech}[3]{%
+  \subsection{#1}%
+  \nopagebreak\noindent{\color{#3}\rule{2.4cm}{2.4pt}}\par\nobreak
+  \nopagebreak{\sffamily\small\color{cMute}#2}\par\medskip}
+
+% Figure slot: a real screenshot if the user dropped one into figures/,
+% otherwise the drawn illustration. See figures/README.md.
+\newcommand{\uifig}[3]{%
+  \begin{figure}[htbp]\centering
+  \IfFileExists{figures/#1.png}{\includegraphics[width=0.95\linewidth]{figures/#1}}{#3}
+  \caption{#2}\end{figure}}
+
+\newcommand{\dg}{\rule[-0.6ex]{0.9pt}{2.2ex}}   % small vertical separator
+
+\begin{document}
+
+% ─────────────────────────── cover ───────────────────────────
+\begin{titlepage}
+\centering
+\vspace*{2.2cm}
+{\sffamily\footnotesize\color{cMute}\MakeUppercase{Grupo Central \dg\ ProfPlan backend}}\par
+\vspace{10mm}
+{\sffamily\bfseries\Huge\color{cInk} Technology Study Guide}\par
+\vspace{4mm}
+{\sffamily\Large\color{cMute} Every moving part of the stack:\\what it is, and what it does here}\par
+\vspace{14mm}
+
+\begin{tikzpicture}[scale=1,every node/.style={font=\sffamily\scriptsize}]
+  \foreach \x/\c/\t in {0/cEdge/Edge, 1/cApi/API, 2/cAsync/Async, 3/cData/Data, 4/cLLM/LLM, 5/cObs/Obs}{
+    \fill[\c] (\x*2.2,0) rectangle ++(1.9,0.34);
+    \node[anchor=north west,color=cMute] at (\x*2.2,-0.08) {\t};
+  }
+\end{tikzpicture}
+
+\vfill
+{\sffamily\small\color{cMute}
+FastAPI \dg\ PostgreSQL + pgvector \dg\ Redis \dg\ Celery \dg\ MinIO \dg\ Ollama\\
+Traefik \dg\ Prometheus \dg\ Grafana \dg\ Loki \dg\ Tempo \dg\ OpenTelemetry \dg\ Docker}\par
+\vspace{6mm}
+{\sffamily\scriptsize\color{cMute}Companion to \file{docs/architecture/ARCHITECTURE.md}}
+\end{titlepage}
+
+% ─────────────────────────── toc ───────────────────────────
+{\hypersetup{linkcolor=cInk}\small
+\renewcommand{\contentsname}{\sffamily What is in here}
+\setlength{\parskip}{0pt}
+\tableofcontents}
+\clearpage
+
+\input{parts/00-how-to-use}
+\input{parts/05-architecture}
+\input{parts/10-edge-runtime}
+\input{parts/20-data}
+\input{parts/30-async}
+\input{parts/40-ai-rag}
+\input{parts/50-observability}
+\input{parts/60-security}
+\input{parts/70-quality}
+\input{parts/80-playbook}
+
+\end{document}

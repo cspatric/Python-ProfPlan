@@ -41,12 +41,15 @@ per responsibility):
 | ollama | `ollama/ollama` | Embedding model server (bge-m3) | — |
 | prometheus | `prom/prometheus` | Metrics | 9090 |
 | grafana | `grafana/grafana` | Dashboards (metrics, logs, traces) | 3000 |
+| alertmanager | `prom/alertmanager` | Routes and groups firing alerts | 9093 |
 | loki | `grafana/loki` | Log aggregation | 3100 |
 | promtail | `grafana/promtail` | Ships all container logs to Loki | — |
 | node-exporter | `prom/node-exporter` | Host metrics (CPU, memory, disk, network) | 9100 |
 | tempo | `grafana/tempo` | Distributed traces backend | — |
 | otel-collector | `otel/opentelemetry-collector-contrib` | Telemetry pipeline | 4317, 4318 |
 | adminer | `adminer` | DB UI (development only) | 8081 |
+| pgbouncer | `edoburu/pgbouncer` | Connection pooler in front of Postgres | not exposed |
+| mailpit | `axllent/mailpit` | Catches outgoing mail in development | 8025 |
 
 Two networks: `frontend` (edge, Traefik ↔ API) and `backend` (internal —
 PostgreSQL is never exposed to the host). Named volumes persist Postgres, Redis,
@@ -78,7 +81,49 @@ active span (exception + stacktrace).
 
 The API exposes `/metrics` (HTTP request rate, latency and status via
 `prometheus-fastapi-instrumentator`). Prometheus also scrapes **node-exporter**
-for host metrics (CPU, memory, disk, network) and the OTel collector.
+for host metrics (CPU, memory, disk, network), **Flower** for Celery task events
+and the OTel collector.
+
+Three things the HTTP instrumentation cannot see are exported by the app itself
+(`app/infrastructure/telemetry/metrics.py`), because they are exactly what the
+alerts watch: `profplan_dependency_up` per dependency, filled by a background
+probe every 15s (Prometheus scrapes `/metrics`, never `/ready`);
+`profplan_celery_queue_depth`; and `profplan_llm_requests_total` by provider and
+outcome, plus `profplan_llm_all_providers_failed_total`.
+
+### Alerting (Prometheus rules + Alertmanager)
+
+Metrics nobody looks at are not monitoring. Twelve rules live in
+`docker/prometheus/rules/profplan.yml` and fire into **Alertmanager**
+(http://localhost:9093), which groups them, suppresses the consequences of an
+outage it already reported, and routes them to a receiver:
+
+| Alert | Fires when |
+|-------|-----------|
+| `ApiDown` | The API stops answering scrapes |
+| `HighServerErrorRate` | More than 2% of requests are 5xx for 5 minutes |
+| `LatencyP95Degraded` | p95 above 1s for 10 minutes (baseline is 545ms) |
+| `DependencyDown` | Postgres or Redis unreachable for 2 minutes |
+| `CeleryQueueBacklog` / `CeleryQueueStalled` | Queue over 100, or nothing succeeding for 15 minutes |
+| `CeleryTaskFailures` | Tasks failing after their retries |
+| `LlmAllProvidersFailing` | The whole fallback chain, Ollama included, is failing |
+| `LlmProviderCircuitOpen` | A provider's breaker is open |
+| `HostDiskFillingUp` / `HostMemoryPressure` | Under 10% disk or memory |
+| `Watchdog` | Always, on purpose: its absence proves the pipeline is broken |
+
+Every rule carries a runbook annotation pointing at
+[`docs/observability/ALERTS.md`](docs/observability/ALERTS.md), which says what
+each one means and what to check first. Alerts stop at the Alertmanager UI until
+you add a receiver; the Slack setup is three steps, documented there.
+
+A dashboard is provisioned as code at
+`docker/grafana/dashboards/profplan-overview.json`: golden signals, dependency
+state, queue depth, LLM outcomes per provider and host resources. Every panel
+backs one of the rules above.
+
+CI validates all of it (`promtool check rules`, `amtool check-config`, dashboard
+JSON), because a broken rule file means Prometheus starts with no alerts at all
+and says nothing about it.
 
 > This repository is **backend-only**. The React frontend lives in a separate
 > repository and is intentionally not part of this stack.
@@ -109,7 +154,8 @@ Once the stack is up, each service is reachable at:
 | Traefik dashboard | _not exposed by default_ | The old unauthenticated `:8080` listener is off (`api.insecure: false`). Uncomment the basic-auth `dashboard` router in `docker/traefik/dynamic.yml` to re-enable it safely |
 | Flower (Celery) | http://localhost:5555 | Celery task monitoring — tasks, queues, failures, workers (task-level detail Prometheus doesn't give) |
 | Grafana | http://localhost:3000 | Default login `admin` / `admin` (Prometheus + Loki + **Tempo** datasources pre-provisioned) |
-| Prometheus | http://localhost:9090 | Metrics |
+| Prometheus | http://localhost:9090 | Metrics, and `/alerts` for rule state |
+| Alertmanager | http://localhost:9093 | What is firing right now, grouped and deduplicated |
 | MinIO console | http://localhost:9001 | Login with `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` from `.env` |
 | MinIO API (S3) | http://localhost:9000 | S3-compatible endpoint |
 | Adminer | http://localhost:8081 | DB UI — server `postgres`, credentials from `.env` |
@@ -176,6 +222,10 @@ modelled for later). Endpoints under `/api/v1/auth`:
 | POST | `/auth/refresh` | Rotate the refresh token, re-issues cookies |
 | POST | `/auth/logout` | Revoke the current session |
 | POST | `/auth/logout-all` | Revoke every session of the user |
+| POST | `/auth/password-reset` | Ask for a reset link (always 202) |
+| POST | `/auth/password-reset/confirm` | Spend the token, set a new password, revoke every session |
+| POST | `/auth/email-verification` | Resend the verification link (authenticated) |
+| POST | `/auth/email-verification/confirm` | Spend the token, mark the address verified |
 | GET | `/auth/me` | Return the authenticated user |
 
 Security properties:
@@ -273,6 +323,35 @@ Academic items carry a free-form `content` (JSONB) and a structured `metadata`
 (JSONB) with the shape: `starts_at`, `ends_at`, `is_graded`, `weight`,
 `is_individual`, `estimated_duration` (plus optional `uuid` / `academic_item_id`).
 
+### Account lifecycle (reset and verification)
+
+Both flows are the same shape: a single-use token, stored only as a SHA-256
+hash, delivered by email from a Celery task so the request never waits on SMTP.
+
+- **Password reset.** `POST /auth/password-reset` answers **202 with the same
+  body whether or not the address has an account**, because a different answer would
+  make the endpoint an oracle for "does this person have an account here".
+  Confirming the reset **revokes every refresh token** for that user: a reset is
+  often the response to someone else having the account, and leaving their
+  session alive would hand it straight back. Asking for a second link kills the
+  first, so only one live key exists at a time.
+- **Email verification.** Sent on registration, and again on request. Failing to
+  queue it never fails the registration: the account exists and the user is
+  signed in. `REQUIRE_EMAIL_VERIFICATION=true` turns verification into a login
+  gate; it is off by default so existing accounts keep working.
+- **Purpose is part of the lookup**, so a verification token cannot be replayed
+  to reset a password.
+
+The one honest gap: revoking sessions kills refresh tokens, so the session
+cannot be renewed, but an **access token already issued stays valid until it
+expires** (15 minutes). That is the documented trade-off of stateless access
+tokens; closing it would mean a store lookup on every request.
+
+In development the stack ships **Mailpit** (`--profile dev`): mail is delivered
+and readable at <http://localhost:8025> instead of going anywhere real. With
+`EMAIL_ENABLED=false` the message body is written to the log instead, which is
+what CI uses.
+
 ## CORS & single entrypoint
 
 The architecture treats **Traefik as the single entrypoint**, so CORS is a
@@ -364,9 +443,48 @@ Covered by `test_upload_validation`, `test_prompt_safety`,
 
 `perf/` holds a Locust load test for the **non-AI** paths (HTTP + Postgres +
 Redis + auth + CRUD) — free to run repeatedly. The AI paths are excluded on
-purpose (their ceiling is the LLM provider, not this service). Run against a live
-stack with `perf/run.sh` (`USERS`/`RATE`/`TIME` configurable). A captured
-baseline and the capacity analysis are in `perf/RESULTS.md`.
+purpose (their ceiling is the LLM provider, not this service) and *blocked*: a
+request to a token-spending path raises before it opens a socket.
+
+```bash
+make up              # stack must be live
+make perf            # flat run (USERS/RATE/TIME)
+make perf-capacity   # ramp until the SLO breaks, print the ceiling
+```
+
+### Scaling out: workers and PgBouncer
+
+The measured ceiling was one uvicorn process on one core. Both halves of the
+documented fix are now in place:
+
+- **`UVICORN_WORKERS`** starts N processes instead of one. Raising it needs
+  `PROMETHEUS_MULTIPROC_DIR` (compose sets it), because otherwise each worker
+  keeps its own metric registry and `/metrics` reports whichever process
+  answered the scrape, which would quietly make every alert wrong. The
+  entrypoint refuses to start with more than one worker without it.
+- **PgBouncer** in transaction mode fronts Postgres, so N workers × their pools
+  no longer means N × real backends. The app disables prepared-statement
+  caching and gives every statement a unique name when `DB_PGBOUNCER=true`;
+  migrations bypass the pooler through `DATABASE_DIRECT_URL`.
+
+Measured on this stack, same 4-CPU budget, 100 users for 60s:
+
+| | req/s | p50 | p95 | failures |
+|---|---|---|---|---|
+| 1 worker | 66 | 1.0s | 3.2s | 0 |
+| 4 workers | **140** | **0.5s** | **1.2s** | 0 |
+
+**2.1x the throughput and a p95 2.7x better**, from configuration alone. One
+process could not use the other three cores, which is precisely what
+`SCALING-80K.md` predicted.
+
+On **one 1-CPU container**: **~750 simultaneous real users** (a click every
+5–10s) at p95 545ms with zero failures; first errors at ~1000. The invariant
+behind that is **~120–180 req/s on one saturated core** — a "concurrent users"
+figure only means something alongside the think time it assumed, so
+`THINK_TIME_MIN/MAX` is a first-class knob. It degrades gracefully and never
+crashed (no restart, no OOM) in any run. Full method, knobs and the captured
+baseline are in `perf/README.md` and `perf/RESULTS.md`.
 
 ## Postman
 

@@ -1,0 +1,155 @@
+%% ProfPlan — full backend architecture in one diagram.
+%% Excalidraw-ready: paste into Excalidraw ➜ menu ➜ "Mermaid to Excalidraw".
+%% Legend: solid = sync request/data · thick = synchronous LLM call
+%%         dashed = async (queue, cache, telemetry, provider fallback)
+%% Colors: blue = API · purple = async/Celery · green = data · orange = LLM · teal = observability
+
+flowchart LR
+
+%% ═══════════════════ EDGE ═══════════════════
+subgraph EDGE["🌐 EDGE"]
+  direction TB
+  CLI["Client<br/>React (Vite) · Postman<br/>HttpOnly cookies<br/>+ X-CSRF-Token"]
+  TRF["Traefik v3.3<br/>:80 → :443 TLS<br/>single entrypoint<br/>X-Forwarded-For<br/>dashboard :8080 off"]
+  CLI -->|"HTTPS"| TRF
+end
+
+%% ═══════════════════ API ═══════════════════
+subgraph API["⚙️ API — FastAPI (image profplan-backend)"]
+  direction LR
+
+  subgraph MW["Middleware — outermost ➜ innermost"]
+    direction TB
+    M1["SecurityHeaders<br/>CSP · nosniff · DENY<br/>HSTS in prod"]
+    M2["RequestLogging<br/>1 JSON line/request<br/>user_id · latency · trace_id"]
+    M3["Rate limit (slowapi)<br/>120/min · auth 10 · exp. 20<br/>counters in Redis"]
+    M4["CSRF<br/>double-submit cookie<br/>unsafe methods"]
+    M1 --> M2 --> M3 --> M4
+  end
+
+  subgraph MOD["Modules — router ➜ service (presentation · application · domain · infrastructure)"]
+    direction TB
+    DISP["APIRouter · prefix /api/v1<br/>auth cookie required<br/>(except login / register)"]
+    A_AUTH["auth · /auth/login refresh logout logout-all me<br/>AuthService — Argon2id · JWT 15min/30d<br/>rotating refresh + reuse detection · Redis lockout"]
+    A_CRUD["domain CRUD · /subjects /plans /modules /academic-items<br/>/academic-item-categories /types /icons /colors<br/>Services — every query scoped to user_id · soft delete"]
+    A_DOC["documents · POST upload → 202 · list · get · /status<br/>UploadService — extension + MIME + magic bytes<br/>100 MB bounded read → 413"]
+    A_RAG["rag · POST /rag/query<br/>RetrievalService — embed → cosine top-k<br/>ALWAYS scoped to owned content_ids"]
+    A_AI["ai · POST /ai/ask · GET /ai/health · PATCH /ai/providers/{name}<br/>AiService — RAG context + prompt safety<br/>« untrusted_document_context »"]
+    A_GEN["generation · POST /plans · GET /generations/{id}<br/>GenerationService — PlannerAgent + RoadmapReviewer<br/>plan (sync) → materialize → fan-out → poll"]
+    A_AUD["audit · GET /audit-logs (admin)<br/>AuditRecorder — row staged in the SAME<br/>transaction as the business change"]
+    A_OPS["ops · /health · /ready · /metrics · /docs · /static"]
+    DISP --> A_AUTH
+    DISP --> A_CRUD
+    DISP --> A_DOC
+    DISP --> A_RAG
+    DISP --> A_AI
+    DISP --> A_GEN
+    DISP --> A_AUD
+    DISP --> A_OPS
+  end
+
+  M4 ==> DISP
+end
+
+%% ═══════════════════ LLM ═══════════════════
+subgraph LLM["🤖 LLM GATEWAY — one door for every AI call"]
+  direction TB
+  GW["LLMGateway<br/>semaphore LLM_MAX_CONCURRENCY=5<br/>skips providers disabled in ai_provider<br/>no DB connection held during the call"]
+  CB["CircuitBreaker — state in Redis<br/>closed → open (3 fails) → half-open (30s)<br/>shared by every API/worker replica"]
+  PC["1 · Anthropic Claude<br/>claude-sonnet-5"]
+  PO["2 · OpenAI<br/>gpt-4o"]
+  PGM["3 · Google Gemini<br/>gemini-2.5-flash"]
+  PL["4 · Ollama (local)<br/>llama3.2:3b<br/>never disableable"]
+  GW --- CB
+  GW ==> PC
+  PC -.->|"fail · no key · circuit open"| PO
+  PO -.->|"fail"| PGM
+  PGM -.->|"fail"| PL
+  PL -.->|"all failed → 503"| GW
+end
+
+%% ═══════════════════ DATA ═══════════════════
+subgraph DAT["🗄️ DATA & MODELS — internal network only"]
+  direction TB
+  PG["PostgreSQL 17 + pgvector<br/>users · providers · user_providers · refresh_tokens<br/>auth_logs · audit_logs · subjects · plans · modules<br/>academic_items · categories(+types) · icons · colors<br/>document · document_content · document_format<br/>plan_generation · plan_document · ai_provider<br/>chunks vector(1024) · HNSW cosine<br/>SQLAlchemy 2.0 async · Alembic migrations"]
+  RDS["Redis 8<br/>db0 cache · db1 Celery broker · db2 results<br/>db3 rate limit · login lockout<br/>embedding cache (7d) · circuit-breaker keys"]
+  MIO["MinIO — S3<br/>bucket profplan<br/>raw files: {subject_id}/{uuid}.ext"]
+  OLL["Ollama<br/>bge-m3 embeddings (1024-d)<br/>llama3.2:3b chat fallback"]
+  ADM["Adminer :8081 — DB UI, dev profile"]
+end
+
+%% ═══════════════════ ASYNC ═══════════════════
+subgraph ASY["🧵 ASYNC — Celery worker (same image as the API)"]
+  direction TB
+  WRK["Celery worker · task_acks_late · prefetch 1<br/>retry 15s → 30s → 60s → FAILED<br/>NullPool engine (event-loop safe)"]
+  subgraph PIPE["task documents.ingest — RAG pipeline · idempotent (PROCESSING/INDEXED = no-op)"]
+    direction LR
+    P1["fetch object"] --> P2["parse → Markdown<br/>pdf·docx·pptx<br/>xlsx·txt·md"] --> P3["header-aware chunking<br/>~1000 chars + overlap"] --> P4["embed bge-m3<br/>1024-d"] --> P5["index in pgvector<br/>status → INDEXED"]
+  end
+  GENT["task generation.run_item — one per academic item<br/>RAG context → LLM → content.markdown<br/>recompute run → RUNNING / COMPLETED / PARTIAL"]
+  FLW["Flower :5555 — task/queue/failure monitor"]
+  WRK --> P1
+  WRK --> GENT
+end
+
+%% ═══════════════════ OBSERVABILITY ═══════════════════
+subgraph OBS["📈 OBSERVABILITY — profile: observability"]
+  direction LR
+  OTC["OTel Collector<br/>OTLP :4317 / :4318"] --> TMP["Tempo<br/>traces"]
+  PTL["Promtail<br/>docker socket"] --> LOK["Loki<br/>logs"]
+  NEX["node-exporter<br/>host CPU/mem/disk"] --> PRM["Prometheus :9090<br/>metrics"]
+  TMP --> GRF["Grafana :3000<br/>metrics + logs + traces<br/>datasources provisioned"]
+  LOK --> GRF
+  PRM --> GRF
+end
+
+%% ═══════════════════ FLOWS ═══════════════════
+TRF ==>|"Host: api.localhost"| M1
+
+A_AUTH -->|"① users · refresh_tokens · auth_logs"| PG
+A_AUTH -.->|"① login attempt counter"| RDS
+A_CRUD -->|"② owner-scoped SQL"| PG
+A_AUD  -->|"⑧ audit_logs (same transaction)"| PG
+
+A_DOC  -->|"③ put_object"| MIO
+A_DOC  -->|"③ document row = PENDING"| PG
+A_DOC  -.->|"③ enqueue documents.ingest"| RDS
+RDS    -.->|"③ ④ deliver task"| WRK
+P1     -->|"③ file bytes"| MIO
+P4     -->|"③ /api/embeddings"| OLL
+P4     -.->|"③ embedding cache"| RDS
+P5     -->|"③ document_content + chunks"| PG
+
+A_GEN  ==>|"④ planner: draft → eval → repair"| GW
+A_GEN  -->|"④ plan_generation + modules + items (PENDING)"| PG
+A_GEN  -.->|"④ fan-out: 1 task per item"| RDS
+GENT   ==>|"④ generate item"| GW
+GENT   -->|"④ item content + run status"| PG
+
+A_RAG  -->|"⑤ embed question"| OLL
+A_RAG  -->|"⑤ cosine top-k over chunks"| PG
+A_AI   ==>|"⑥ answer grounded in context"| GW
+CB     -.->|"⑥ breaker keys"| RDS
+
+M2     -.->|"⑦ OTLP spans (OTEL_ENABLED)"| OTC
+WRK    -.->|"⑦ OTLP spans"| OTC
+M2     -.->|"⑦ stdout JSON logs"| PTL
+WRK    -.->|"⑦ stdout JSON logs"| PTL
+A_OPS  -.->|"⑦ /metrics scrape"| PRM
+FLW    -.-> RDS
+ADM    -.-> PG
+
+%% ═══════════════════ STYLE ═══════════════════
+classDef edge  fill:#eef2f7,stroke:#64748b,stroke-width:2px,color:#0b1220
+classDef api   fill:#e8efff,stroke:#2563eb,stroke-width:2px,color:#0b1220
+classDef asyn  fill:#f2ecff,stroke:#7c3aed,stroke-width:2px,color:#0b1220
+classDef data  fill:#e7f6ef,stroke:#0f766e,stroke-width:2px,color:#0b1220
+classDef llm   fill:#fff0e6,stroke:#ea580c,stroke-width:2px,color:#0b1220
+classDef obs   fill:#e6f7f7,stroke:#0d9488,stroke-width:2px,color:#0b1220
+
+class CLI,TRF edge
+class DISP,M1,M2,M3,M4,A_AUTH,A_CRUD,A_DOC,A_RAG,A_AI,A_GEN,A_AUD,A_OPS api
+class WRK,P1,P2,P3,P4,P5,GENT,FLW asyn
+class PG,RDS,MIO,OLL,ADM data
+class GW,CB,PC,PO,PGM,PL llm
+class OTC,TMP,PTL,LOK,PRM,NEX,GRF obs
