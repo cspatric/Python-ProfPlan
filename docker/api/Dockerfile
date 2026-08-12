@@ -28,6 +28,8 @@ COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 COPY scripts ./scripts
+COPY docker/api/start-api.sh /usr/local/bin/start-api
+RUN chmod +x /usr/local/bin/start-api
 
 # Run as an unprivileged user (both the API and the Celery worker use this
 # image) so a future RCE in a dependency can't write outside /app or touch
@@ -38,6 +40,7 @@ USER app
 
 EXPOSE 8000
 
-# --no-access-log: the app's RequestLoggingMiddleware is the single, richer
-# (structured JSON, with user context) source of HTTP access logs.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+# CMD, not ENTRYPOINT: the worker and Flower replace the command entirely, and
+# an entrypoint would still wrap them. See docker/api/start-api.sh for why the
+# API needs a script rather than a plain uvicorn line.
+CMD ["start-api"]

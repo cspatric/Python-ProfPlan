@@ -11,6 +11,8 @@ __pycache__
 .env.*
 !.env.example
 docker
+# ...except the API entrypoint, which the image needs.
+!docker/api/start-api.sh
 docs
 tests
 *.md
