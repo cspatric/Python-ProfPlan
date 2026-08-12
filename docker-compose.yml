@@ -109,8 +109,24 @@ services:
     profiles: ["dev", "production"]
     restart: unless-stopped
     env_file: .env
+    environment:
+      # One uvicorn process per core is the usual starting point. The measured
+      # ceiling of ~150 req/s is one saturated core, so this is the knob that
+      # buys throughput. Raise it together with the container's cpu limit.
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
+      # With more than one worker every process keeps its own metric registry,
+      # so they must be merged at scrape time. See docker/api/start-api.sh.
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
+    volumes:
+      # In-memory, wiped with the container: this holds one small file per
+      # worker process, not data worth keeping.
+      - type: tmpfs
+        target: /tmp/prometheus
+        tmpfs:
+          size: 33554432
+          mode: 0777
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -136,6 +152,83 @@ services:
     logging: *default-logging
 
   # -------------------------------------------------------------------------
+  # Mailpit — a mail server that catches everything and delivers nothing.
+  #
+  # Account emails (password reset, address verification) are only useful in
+  # development if you can read the link. Mailpit accepts SMTP on 1025 and
+  # shows the message in a web UI on 8025. dev profile only: production points
+  # SMTP_HOST at a real provider.
+  # -------------------------------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:v1.21
+    profiles: ["dev"]
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    networks:
+      - backend
+    ports:
+      - "8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # PgBouncer — connection pooler in front of Postgres.
+  #
+  # Why it exists: every uvicorn worker brings its own SQLAlchemy pool, so
+  # UVICORN_WORKERS=4 means 4x the connections, and Postgres allocates real
+  # memory per backend. PgBouncer multiplexes many client connections onto few
+  # server ones, which is what makes raising the worker count survivable.
+  #
+  # transaction mode hands a server connection back at COMMIT rather than at
+  # disconnect. That is where the multiplexing comes from, and also why the app
+  # has to stop caching prepared statements (see DB_PGBOUNCER in the settings).
+  # -------------------------------------------------------------------------
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.23.1-p2
+    profiles: ["dev", "production"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      # 6432 by convention: the port alone tells you whether a connection is
+      # hitting the pooler or Postgres directly.
+      LISTEN_PORT: "6432"
+      POOL_MODE: transaction
+      AUTH_TYPE: scram-sha-256
+      # Clients it will accept, versus server connections it will open. The
+      # gap between these two numbers is the entire point of the component.
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "25"
+      MIN_POOL_SIZE: "5"
+      RESERVE_POOL_SIZE: "5"
+      RESERVE_POOL_TIMEOUT: "3"
+      # Needed for SHOW commands and for the healthcheck below.
+      ADMIN_USERS: ${POSTGRES_USER}
+      STATS_USERS: ${POSTGRES_USER}
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits,search_path
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U $${DB_USER} -d pgbouncer || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
   # Celery worker — same image as the API, different command.
   # -------------------------------------------------------------------------
   worker:
@@ -151,7 +244,9 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
-      postgres:
+      # Through the pooler, like the API: the worker opens and closes a
+      # connection per task (NullPool), which is the cost PgBouncer removes.
+      pgbouncer:
         condition: service_healthy
     networks:
       - backend
@@ -332,12 +427,42 @@ services:
   # -------------------------------------------------------------------------
   # Prometheus — metrics.
   # -------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
+  # Alertmanager — receives what Prometheus fires, deduplicates and groups it,
+  # and routes it to a receiver. Without this, the alert rules evaluate and
+  # nothing ever leaves the building.
+  # -------------------------------------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    volumes:
+      - ./docker/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    networks:
+      - backend
+    ports:
+      - "9093:9093"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9093/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
   prometheus:
     image: prom/prometheus:v3.13.0
     profiles: ["observability"]
     restart: unless-stopped
+    depends_on:
+      alertmanager:
+        condition: service_healthy
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus/rules:/etc/prometheus/rules:ro
     networks:
       - backend
     ports:
@@ -365,6 +490,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./docker/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
       - ./docker/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
     networks:
       - backend
     ports:
@@ -444,6 +570,9 @@ services:
       UV_LINK_MODE: copy
       # Isolated test database and Redis logical db — never touch dev data.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}_test
+      # Straight to Postgres, not through the pooler: the throwaway test
+      # database is not in PgBouncer's config, and DDL needs a real session.
+      DB_PGBOUNCER: "false"
       REDIS_URL: redis://redis:6379/15
       # Rate limiting is disabled under test so shared-client bursts don't 429;
       # it is exercised explicitly by test_rate_limit_flow with its own limiter.
@@ -472,6 +601,7 @@ networks:
 
 volumes:
   postgres_data:
+  alertmanager_data:
   redis_data:
   minio_data:
   grafana_data:

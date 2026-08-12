@@ -27,8 +27,20 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str = "redis://redis:6379/0"
 
+    # Runtime connections normally go through PgBouncer. Migrations and
+    # anything needing session-level state must not: a pooler in transaction
+    # mode can hand the next statement to a different backend. Empty means
+    # "same as database_url", which is correct when there is no pooler.
+    database_direct_url: str = ""
+    # True when database_url points at PgBouncer in transaction mode. It
+    # changes how asyncpg handles prepared statements; without it the app
+    # fails intermittently under load, which is the worst way to find out.
+    db_pgbouncer: bool = False
+
     # API-process DB pool. Deliberate, documented numbers instead of silent
     # SQLAlchemy defaults, sized with headroom under Postgres' max_connections.
+    # With PgBouncer in front, this pool holds cheap pooler connections, and
+    # the expensive Postgres backends are shared behind it.
     db_pool_size: int = 10
     db_max_overflow: int = 20
     db_pool_timeout: int = 30
@@ -117,9 +129,42 @@ class Settings(BaseSettings):
     # Cache embeddings in Redis to avoid re-embedding identical text (7 days).
     embedding_cache_ttl_seconds: int = 604800
 
+    # Email. Off by default: with EMAIL_ENABLED=false the message is written
+    # to the log instead of sent, which is what development and CI want (the
+    # link is the point, a mail server is not). Delivery always happens in a
+    # Celery task, never in the request.
+    email_enabled: bool = False
+    smtp_host: str = "mailpit"
+    smtp_port: int = 1025
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = False
+    smtp_timeout_seconds: float = 10.0
+    email_from_address: str = "no-reply@profplan.local"
+    email_from_name: str = "ProfPlan"
+    # Where the links in those emails point. The token is consumed by the
+    # frontend, which then calls the confirm endpoint.
+    frontend_base_url: str = "http://localhost:5173"
+
+    # Account lifecycle. Single-use tokens, stored only as a SHA-256 hash, the
+    # same discipline as refresh tokens: a database leak must not hand over
+    # the ability to reset somebody's password.
+    password_reset_token_ttl_minutes: int = 30
+    email_verification_token_ttl_hours: int = 48
+    # When true, an unverified account cannot log in. Off by default so
+    # existing accounts and dev environments keep working.
+    require_email_verification: bool = False
+
     # Celery
     celery_broker_url: str = "redis://redis:6379/1"
     celery_result_backend: str = "redis://redis:6379/2"
+    # Broker queues whose depth is exported as a metric (comma separated).
+    celery_queues: str = "celery"
+
+    # Metrics probe — fills the dependency and queue-depth gauges that the
+    # alert rules watch. Off under test, where there is nothing to probe.
+    metrics_probe_enabled: bool = True
+    metrics_probe_interval_seconds: float = 15.0
 
     # Tracing (OpenTelemetry). Opt-in; export goes to the OTel Collector.
     otel_enabled: bool = False
@@ -127,6 +172,11 @@ class Settings(BaseSettings):
 
     # Logging — structured JSON to stdout (shipped to Loki by Promtail).
     log_level: str = "INFO"
+
+    @property
+    def migration_url(self) -> str:
+        """Where DDL and migrations connect: never through the pooler."""
+        return self.database_direct_url or self.database_url
 
     @property
     def is_development(self) -> bool:
