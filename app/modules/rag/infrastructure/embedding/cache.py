@@ -7,6 +7,8 @@ instead of hitting the model again.
 
 import hashlib
 
+from redis.asyncio import Redis
+
 from app.core.config import get_settings
 from app.infrastructure.redis.cache import RedisCache
 from app.infrastructure.redis.client import redis_client
@@ -48,11 +50,16 @@ class CachedEmbedding:
         return vectors[0]
 
 
-def build_cached_embedder() -> CachedEmbedding:
-    """Build the default cached embedder (Ollama + Redis)."""
+def build_cached_embedder(redis: Redis | None = None) -> CachedEmbedding:
+    """Build the cached embedder (Ollama + Redis).
+
+    ``redis`` defaults to the API's shared client. Celery tasks pass their
+    per-run client so cache connections belong to the task's own event loop
+    (see ``app/infrastructure/redis/client.py``).
+    """
     settings = get_settings()
     cache = RedisCache(
-        redis_client,
+        redis if redis is not None else redis_client,
         prefix="embedding:",
         ttl=settings.embedding_cache_ttl_seconds,
     )

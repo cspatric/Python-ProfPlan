@@ -9,11 +9,13 @@ and the run recomputed to PARTIAL.
 import asyncio
 from uuid import UUID
 
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.celery.worker import celery_app
 from app.infrastructure.database.session import WorkerSessionFactory
-from app.modules.ai.infrastructure.gateway.llm_gateway import get_gateway
+from app.infrastructure.redis.client import new_redis_client
+from app.modules.ai.infrastructure.gateway.llm_gateway import build_gateway
 from app.modules.ai.infrastructure.repository import AiProviderRepository
 from app.modules.documents.infrastructure.repository import (
     DocumentContentRepository,
@@ -33,15 +35,18 @@ from app.modules.teaching_plans.infrastructure.repository import PlanRepository
 _MAX_RETRIES = 3
 
 
-def _build_service(session: AsyncSession) -> GenerationService:
+def _build_service(session: AsyncSession, redis: Redis) -> GenerationService:
+    # Redis-backed pieces (breakers, embed cache) take the per-run client:
+    # this whole graph lives and dies inside one asyncio.run(), and pooled
+    # connections must never outlive the loop that created them.
     retrieval = RetrievalService(
-        build_cached_embedder(),
+        build_cached_embedder(redis),
         SearchService(ChunkRepository(session)),
         DocumentContentRepository(session),
     )
     return GenerationService(
         session,
-        gateway=get_gateway(),
+        gateway=build_gateway(redis),
         retrieval=retrieval,
         plans=PlanRepository(session),
         repo=GenerationRepository(session),
@@ -52,13 +57,21 @@ def _build_service(session: AsyncSession) -> GenerationService:
 
 
 async def _run(item_id: UUID) -> None:
-    async with WorkerSessionFactory() as session:
-        await _build_service(session).process_item(item_id)
+    redis = new_redis_client()
+    try:
+        async with WorkerSessionFactory() as session:
+            await _build_service(session, redis).process_item(item_id)
+    finally:
+        await redis.aclose()
 
 
 async def _fail(item_id: UUID, error: str) -> None:
-    async with WorkerSessionFactory() as session:
-        await _build_service(session).mark_item_failed(item_id, error)
+    redis = new_redis_client()
+    try:
+        async with WorkerSessionFactory() as session:
+            await _build_service(session, redis).mark_item_failed(item_id, error)
+    finally:
+        await redis.aclose()
 
 
 @celery_app.task(bind=True, name="generation.run_item", max_retries=_MAX_RETRIES)

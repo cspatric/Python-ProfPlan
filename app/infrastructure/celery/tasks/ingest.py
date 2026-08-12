@@ -10,6 +10,7 @@ from uuid import UUID
 
 from app.infrastructure.celery.worker import celery_app
 from app.infrastructure.database.session import WorkerSessionFactory
+from app.infrastructure.redis.client import new_redis_client
 from app.infrastructure.storage.minio import get_object_storage
 from app.modules.documents.domain.entities import IngestionStatus
 from app.modules.documents.infrastructure.repository import (
@@ -26,19 +27,25 @@ _MAX_RETRIES = 3
 
 
 async def _run(document_id: UUID) -> None:
-    async with WorkerSessionFactory() as session:
-        indexing = IndexingService(
-            session, ChunkRepository(session), DocumentContentRepository(session)
-        )
-        service = IngestionService(
-            session,
-            storage=get_object_storage(),
-            embedder=build_cached_embedder(),
-            documents=DocumentRepository(session),
-            contents=DocumentContentRepository(session),
-            indexing=indexing,
-        )
-        await service.ingest(document_id)
+    # Per-run Redis client: pooled connections must not outlive this
+    # asyncio.run()'s loop (see app/infrastructure/redis/client.py).
+    redis = new_redis_client()
+    try:
+        async with WorkerSessionFactory() as session:
+            indexing = IndexingService(
+                session, ChunkRepository(session), DocumentContentRepository(session)
+            )
+            service = IngestionService(
+                session,
+                storage=get_object_storage(),
+                embedder=build_cached_embedder(redis),
+                documents=DocumentRepository(session),
+                contents=DocumentContentRepository(session),
+                indexing=indexing,
+            )
+            await service.ingest(document_id)
+    finally:
+        await redis.aclose()
 
 
 async def _mark_failed(document_id: UUID, error: str) -> None:
