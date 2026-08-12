@@ -38,6 +38,9 @@ class User(Base):
         server_default=UserRole.USER.name,
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Null until the address is proven. Whether an unverified account may log
+    # in is a policy switch (REQUIRE_EMAIL_VERIFICATION), not a schema one.
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -16,6 +17,7 @@ from app.core.security import (
 from app.modules.auth.application.dto import IssuedTokens
 from app.modules.auth.domain.exceptions import (
     EmailAlreadyRegisteredError,
+    EmailNotVerifiedError,
     InvalidCredentialsError,
     InvalidTokenError,
     RateLimitedError,
@@ -124,8 +126,23 @@ class AuthService:
             await self._session.commit()
             raise InvalidCredentialsError
 
+        # Credentials are correct from here on, so the rate-limit counters are
+        # cleared before the verification gate: an unverified user typing the
+        # right password is not a brute-force attempt.
         await self._rate_limiter.reset(ip_key)
         await self._rate_limiter.reset(account_key)
+
+        if get_settings().require_email_verification and user.email_verified_at is None:
+            await self._auth_logs.record(
+                event=AuthEvent.LOGIN_FAILED,
+                user_id=user.uuid,
+                email=user.email,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            await self._session.commit()
+            raise EmailNotVerifiedError
+
         await self._users.mark_logged_in(user)
         tokens = await self._issue_tokens(user, ip_address, user_agent)
         await self._auth_logs.record(

@@ -12,6 +12,7 @@ celery_app = Celery(
     include=[
         "app.infrastructure.celery.tasks.ingest",
         "app.infrastructure.celery.tasks.generate",
+        "app.infrastructure.celery.tasks.email",
     ],
 )
 celery_app.conf.update(

@@ -21,6 +21,9 @@ from app.modules.academic_items.infrastructure import (  # noqa: F401
 from app.modules.ai.infrastructure import models as ai_models  # noqa: F401
 from app.modules.audit.infrastructure import models as audit_models  # noqa: F401
 from app.modules.auth.infrastructure import models as auth_models  # noqa: F401
+from app.modules.catalogs.infrastructure import (  # noqa: F401
+    models as catalog_models,
+)
 from app.modules.documents.infrastructure import (  # noqa: F401
     models as document_models,
 )
@@ -43,7 +46,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Migrations bypass PgBouncer: DDL and Alembic's version locking need a
+# session-level connection, which transaction pooling does not give.
+config.set_main_option("sqlalchemy.url", get_settings().migration_url)
 
 target_metadata = Base.metadata
 

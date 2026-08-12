@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     String,
     UniqueConstraint,
     func,
@@ -28,6 +29,21 @@ class AuthEvent(StrEnum):
     TOKEN_REUSE_DETECTED = "token_reuse_detected"
     LOGOUT = "logout"
     LOGOUT_ALL = "logout_all"
+    PASSWORD_RESET_REQUESTED = "password_reset_requested"
+    PASSWORD_RESET_COMPLETED = "password_reset_completed"
+    EMAIL_VERIFICATION_SENT = "email_verification_sent"
+    EMAIL_VERIFIED = "email_verified"
+
+
+class VerificationPurpose(StrEnum):
+    """What a one-time token is allowed to do.
+
+    The purpose is part of the lookup, so a token minted to verify an address
+    can never be replayed to reset a password.
+    """
+
+    PASSWORD_RESET = "password_reset"
+    EMAIL_VERIFICATION = "email_verification"
 
 
 class Provider(Base):
@@ -128,4 +144,45 @@ class AuthLog(Base):
         nullable=False,
         server_default=func.now(),
         index=True,
+    )
+
+
+class VerificationToken(Base):
+    """A single-use, expiring token for password reset or email verification.
+
+    Only the SHA-256 hash is stored, the same discipline as refresh tokens: a
+    database leak must not hand an attacker the ability to reset accounts. The
+    raw value exists exactly once, in the email that was sent.
+    """
+
+    __tablename__ = "verification_tokens"
+    __table_args__ = (
+        # Every lookup is "find the live token with this hash for this
+        # purpose", so that pair is the index.
+        Index("ix_verification_tokens_hash_purpose", "token_hash", "purpose"),
+    )
+
+    uuid: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.uuid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    purpose: Mapped[VerificationPurpose] = mapped_column(
+        Enum(VerificationPurpose, name="verification_purpose"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    # Set the moment the token is spent. Single use is what stops a reset link
+    # forwarded to the wrong inbox, or sitting in a mail archive, from working
+    # a second time.
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    requested_ip: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

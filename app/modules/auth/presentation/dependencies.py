@@ -12,11 +12,16 @@ from app.core.config import get_settings
 from app.core.security import decode_access_token
 from app.infrastructure.database.session import get_session
 from app.infrastructure.redis.client import get_redis
+from app.modules.auth.application.account_service import (
+    AccountService,
+    queue_via_celery,
+)
 from app.modules.auth.application.service import AuthService
 from app.modules.auth.infrastructure.rate_limit import LoginRateLimiter
 from app.modules.auth.infrastructure.repository import (
     AuthLogRepository,
     RefreshTokenRepository,
+    VerificationTokenRepository,
 )
 from app.modules.users.domain.entities import UserRole
 from app.modules.users.infrastructure.models import User
@@ -37,6 +42,20 @@ def get_auth_service(
         refresh_tokens=RefreshTokenRepository(session),
         auth_logs=AuthLogRepository(session),
         rate_limiter=LoginRateLimiter(redis),
+    )
+
+
+def get_account_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AccountService:
+    """Build an AccountService wired to the request-scoped session."""
+    return AccountService(
+        session=session,
+        users=UserRepository(session),
+        tokens=VerificationTokenRepository(session),
+        refresh_tokens=RefreshTokenRepository(session),
+        auth_logs=AuthLogRepository(session),
+        send_email=queue_via_celery,
     )
 
 
@@ -89,3 +108,4 @@ async def get_current_admin(
 
 CurrentAdmin = Annotated[User, Depends(get_current_admin)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]

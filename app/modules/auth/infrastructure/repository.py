@@ -6,7 +6,13 @@ from datetime import UTC, datetime
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.infrastructure.models import AuthEvent, AuthLog, RefreshToken
+from app.modules.auth.infrastructure.models import (
+    AuthEvent,
+    AuthLog,
+    RefreshToken,
+    VerificationPurpose,
+    VerificationToken,
+)
 
 
 class RefreshTokenRepository:
@@ -90,3 +96,72 @@ class AuthLogRepository:
             )
         )
         await self._session.flush()
+
+
+class VerificationTokenRepository:
+    """Data-access layer for one-time account tokens."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    def add(
+        self,
+        *,
+        user_id: uuid.UUID,
+        purpose: VerificationPurpose,
+        token_hash: str,
+        expires_at: datetime,
+        requested_ip: str | None,
+    ) -> VerificationToken:
+        """Stage a new token (the caller commits)."""
+        row = VerificationToken(
+            user_id=user_id,
+            purpose=purpose,
+            token_hash=token_hash,
+            expires_at=expires_at,
+            requested_ip=requested_ip,
+        )
+        self._session.add(row)
+        return row
+
+    async def get_usable(
+        self, *, token_hash: str, purpose: VerificationPurpose
+    ) -> VerificationToken | None:
+        """The live token with this hash, or None.
+
+        "Live" means the right purpose, not yet spent and not yet expired. The
+        three conditions are one query so a caller cannot check two of them and
+        forget the third.
+        """
+        stmt = select(VerificationToken).where(
+            VerificationToken.token_hash == token_hash,
+            VerificationToken.purpose == purpose,
+            VerificationToken.used_at.is_(None),
+            VerificationToken.expires_at > datetime.now(UTC),
+        )
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def invalidate_outstanding(
+        self, *, user_id: uuid.UUID, purpose: VerificationPurpose
+    ) -> int:
+        """Spend every unused token of this purpose for the user.
+
+        Called before issuing a new one, so asking for a second reset link
+        silently kills the first. Otherwise every request would leave another
+        working key in another inbox.
+        """
+        stmt = (
+            update(VerificationToken)
+            .where(
+                VerificationToken.user_id == user_id,
+                VerificationToken.purpose == purpose,
+                VerificationToken.used_at.is_(None),
+            )
+            .values(used_at=datetime.now(UTC))
+        )
+        return (await self._session.execute(stmt)).rowcount or 0
+
+    @staticmethod
+    def mark_used(row: VerificationToken) -> None:
+        """Spend a token (the caller commits)."""
+        row.used_at = datetime.now(UTC)

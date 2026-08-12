@@ -1,5 +1,6 @@
 """Authentication HTTP endpoints."""
 
+import logging
 import secrets
 
 from fastapi import APIRouter, Request, Response, status
@@ -9,16 +10,21 @@ from app.api.rate_limit import auth_limit
 from app.core.config import get_settings
 from app.modules.auth.application.dto import IssuedTokens
 from app.modules.auth.presentation.dependencies import (
+    AccountServiceDep,
     AuthServiceDep,
     CurrentUser,
 )
 from app.modules.auth.presentation.schemas import (
+    EmailVerificationConfirm,
     LoginRequest,
     MessageResponse,
+    PasswordResetConfirm,
+    PasswordResetRequest,
     RegisterRequest,
     UserResponse,
 )
 
+logger = logging.getLogger("app.auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
 _settings = get_settings()
 
@@ -85,6 +91,7 @@ async def register(
     request: Request,
     response: Response,
     service: AuthServiceDep,
+    accounts: AccountServiceDep,
 ) -> UserResponse:
     """Create a new account and sign in (sets the auth cookies).
 
@@ -97,6 +104,20 @@ async def register(
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
+    # Prove the address, but do not block on it: the account works right away
+    # unless REQUIRE_EMAIL_VERIFICATION says otherwise. The email is queued,
+    # so a slow mail server cannot make registration slow or fail.
+    #
+    # And if queueing itself fails (broker down), the registration still
+    # succeeded: the account exists and the user is signed in. Turning that
+    # into a 500 would tell them their sign-up failed when it did not, and
+    # they can ask for a new link from the app.
+    try:
+        await accounts.send_email_verification(
+            user=tokens.user, ip_address=_client_ip(request)
+        )
+    except Exception:  # noqa: BLE001 — never fail a good registration
+        logger.exception("could not queue the verification email")
     _set_auth_cookies(response, tokens)
     return UserResponse.model_validate(tokens.user)
 
@@ -180,4 +201,96 @@ async def logout_all(
 @router.get("/me", response_model=UserResponse)
 async def me(user: CurrentUser) -> UserResponse:
     """Return the currently authenticated user."""
+    return UserResponse.model_validate(user)
+
+
+@router.post(
+    "/password-reset",
+    response_model=MessageResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+@auth_limit
+async def request_password_reset(
+    payload: PasswordResetRequest,
+    request: Request,
+    response: Response,
+    service: AccountServiceDep,
+) -> MessageResponse:
+    """Send a password reset link to the address, if it has an account.
+
+    Always 202, and always the same body. Answering 404 for an unknown address
+    would turn this endpoint into a way to ask "does this person have an
+    account here", which is the first thing a credential-stuffing run wants.
+    Rate limited like the other credential endpoints.
+    """
+    await service.request_password_reset(
+        email=payload.email,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return MessageResponse(
+        detail="If that address has an account, a reset link is on its way."
+    )
+
+
+@router.post("/password-reset/confirm", response_model=MessageResponse)
+@auth_limit
+async def confirm_password_reset(
+    payload: PasswordResetConfirm,
+    request: Request,
+    response: Response,
+    service: AccountServiceDep,
+) -> MessageResponse:
+    """Set a new password using a reset token, and end every session.
+
+    Every session is revoked on purpose: a reset is often the response to
+    someone else having the account, and leaving their session alive would
+    give it straight back. The user signs in again with the new password.
+    """
+    await service.confirm_password_reset(
+        token=payload.token,
+        new_password=payload.password,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return MessageResponse(detail="Password updated. Sign in again.")
+
+
+@router.post(
+    "/email-verification",
+    response_model=MessageResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+@auth_limit
+async def resend_email_verification(
+    request: Request,
+    response: Response,
+    user: CurrentUser,
+    service: AccountServiceDep,
+) -> MessageResponse:
+    """Send a fresh verification link to the signed-in user's address.
+
+    A no-op for an address that is already verified, and the answer does not
+    say which case it was.
+    """
+    await service.send_email_verification(user=user, ip_address=_client_ip(request))
+    return MessageResponse(
+        detail="If the address needs confirming, a link is on its way."
+    )
+
+
+@router.post("/email-verification/confirm", response_model=UserResponse)
+@auth_limit
+async def confirm_email_verification(
+    payload: EmailVerificationConfirm,
+    request: Request,
+    response: Response,
+    service: AccountServiceDep,
+) -> UserResponse:
+    """Prove ownership of the address with a verification token."""
+    user = await service.confirm_email_verification(
+        token=payload.token,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return UserResponse.model_validate(user)

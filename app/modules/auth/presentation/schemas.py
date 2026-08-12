@@ -23,6 +23,25 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class PasswordResetRequest(BaseModel):
+    """Ask for a reset link. Answered identically whether or not it exists."""
+
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    """Spend a reset token and set a new password."""
+
+    token: str = Field(min_length=16, max_length=512)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class EmailVerificationConfirm(BaseModel):
+    """Spend a verification token."""
+
+    token: str = Field(min_length=16, max_length=512)
+
+
 class UserResponse(BaseModel):
     """Public representation of a user."""
 
@@ -35,6 +54,7 @@ class UserResponse(BaseModel):
     status: UserStatus
     role: UserRole
     last_login_at: datetime | None
+    email_verified_at: datetime | None
 
 
 class MessageResponse(BaseModel):
