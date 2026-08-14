@@ -46,6 +46,22 @@ class AcademicItemUpdate(BaseModel):
     metadata: AcademicItemMetadata | None = None
 
 
+class AcademicItemSourceResponse(BaseModel):
+    """One passage the AI was given before it wrote this item."""
+
+    rank: int
+    document_id: UUID | None
+    #: None when the document has since been deleted. The passage is still
+    #: shown: what was cited does not stop having been cited.
+    document_title: str | None
+    section: str | None
+    excerpt: str
+    #: Cosine similarity to the request, 1.0 being identical. Shown because a
+    #: passage at 0.45 supports a claim far more weakly than one at 0.85, and a
+    #: citation that hides that is a citation that flatters itself.
+    similarity: float | None
+
+
 class AcademicItemResponse(BaseModel):
     """Public representation of an academic item."""
 

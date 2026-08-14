@@ -1,5 +1,6 @@
 """Academic item use cases (CRUD scoped to the owner, soft delete)."""
 
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
@@ -12,9 +13,15 @@ from app.modules.academic_items.domain.exceptions import (
     HandoutNotReadyError,
     InvalidModuleError,
 )
-from app.modules.academic_items.infrastructure.models import AcademicItem
+from app.modules.academic_items.infrastructure.models import (
+    AcademicItem,
+    AcademicItemSource,
+)
 from app.modules.academic_items.infrastructure.repository import (
     AcademicItemRepository,
+)
+from app.modules.academic_items.infrastructure.source_repository import (
+    AcademicItemSourceRepository,
 )
 from app.modules.plan_modules.infrastructure.repository import ModuleRepository
 
@@ -37,10 +44,12 @@ class AcademicItemService:
         session: AsyncSession,
         repository: AcademicItemRepository,
         modules: ModuleRepository,
+        sources: AcademicItemSourceRepository,
     ) -> None:
         self._session = session
         self._repo = repository
         self._modules = modules
+        self._sources = sources
 
     async def _ensure_module_owned(self, module_id: UUID, user_id: UUID) -> None:
         if await self._modules.get_by_id(module_id, user_id) is None:
@@ -70,6 +79,21 @@ class AcademicItemService:
         if item is None:
             raise AcademicItemNotFoundError
         return item
+
+    async def sources(
+        self, *, user_id: UUID, item_id: UUID
+    ) -> Sequence[tuple[AcademicItemSource, str | None]]:
+        """The passages this item was written from, in the prompt's order.
+
+        Ownership is checked by loading the item first: the sources quote the
+        teacher's own uploaded material, so reaching them through an item id
+        alone would be a way to read somebody else's documents.
+        """
+        await self.get(user_id=user_id, item_id=item_id)
+        # Sequence, not list, in the annotation: this class has a method
+        # called `list`, which shadows the builtin inside the class body and
+        # makes `list[...]` a call on a function.
+        return await self._sources.list_for_item(item_id)
 
     async def handout(self, *, user_id: UUID, item_id: UUID) -> HandoutContext:
         """The item, described the way the printable handout needs it."""

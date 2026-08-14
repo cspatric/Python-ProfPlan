@@ -74,7 +74,9 @@ def make_service(
     owned: set[tuple[UUID, UUID]],
 ) -> tuple[AcademicItemService, FakeItemRepository]:
     repo = FakeItemRepository()
-    service = AcademicItemService(FakeSession(), repo, FakeModuleRepository(owned))
+    service = AcademicItemService(
+        FakeSession(), repo, FakeModuleRepository(owned), sources=None
+    )
     return service, repo
 
 

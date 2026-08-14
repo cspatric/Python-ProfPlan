@@ -372,6 +372,20 @@ what CI uses. Pointing it at a real server is four environment variables and
 one command to prove it works, both in
 [`docs/deployment/EMAIL.md`](docs/deployment/EMAIL.md).
 
+## Where an activity came from
+
+Every generated activity records the passages it was written from: the excerpt
+as it was sent to the model, its heading breadcrumb, the document it came from
+and how close it was to the request. `GET /academic-items/{id}/sources` returns
+them and the activity page shows them beside the material.
+
+The excerpt is **copied**, not referenced: re-ingesting a document replaces its
+chunks, and a citation that were only a foreign key would break exactly when
+somebody uploads a corrected file. And an activity with no sources says so,
+which is the answer that was missing when the AI wrote confidently about
+something no uploaded document mentioned. See
+[`docs/rag/CITATIONS.md`](docs/rag/CITATIONS.md).
+
 ## What the AI costs
 
 Every completion is counted by provider **and model**: tokens, list-price cost

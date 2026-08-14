@@ -7,6 +7,9 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.academic_items.infrastructure.models import AcademicItem
+from app.modules.academic_items.infrastructure.source_repository import (
+    AcademicItemSourceRepository,
+)
 from app.modules.ai.domain.usage import usage_scope
 from app.modules.ai.infrastructure.gateway.llm_gateway import LLMGateway
 from app.modules.ai.infrastructure.repository import AiProviderRepository
@@ -36,6 +39,7 @@ from app.modules.generation.infrastructure.plan_document_repository import (
 from app.modules.generation.infrastructure.repository import GenerationRepository
 from app.modules.plan_modules.infrastructure.models import Module
 from app.modules.rag.application.retrieval_service import RetrievalService
+from app.modules.rag.domain.chunk import SearchResult
 from app.modules.subjects.infrastructure.repository import SubjectRepository
 from app.modules.teaching_plans.domain.exceptions import (
     InvalidSubjectError,
@@ -98,7 +102,14 @@ async def _retrieve_context(
     content_ids: list[UUID] | None,
     query: str,
     limit: int,
-) -> str:
+) -> tuple[str, list[SearchResult]]:
+    """The passages to put in the prompt, and the passages themselves.
+
+    Both, because they are the same thing seen twice: the string is what the
+    model reads and the list is what the teacher is later shown as the source.
+    Returning only the string is how the application ended up able to say what
+    it wrote and not what it wrote it from.
+    """
     try:
         chunks = await retrieval.query(
             user_id=user_id,
@@ -108,8 +119,12 @@ async def _retrieve_context(
             limit=limit,
         )
     except Exception:  # noqa: BLE001 — context is best-effort
-        return ""
-    return "\n\n".join(f"[{i + 1}] {c.content}" for i, c in enumerate(chunks))
+        return "", []
+    # The numbering is 1-based and is the rank the sources are stored under, so
+    # a "[2]" in the generated text points at the second citation and not at
+    # nothing.
+    text = "\n\n".join(f"[{i + 1}] {c.content}" for i, c in enumerate(chunks))
+    return text, chunks
 
 
 class GenerationService:
@@ -126,6 +141,7 @@ class GenerationService:
         providers: AiProviderRepository,
         subjects: SubjectRepository,
         plan_docs: PlanDocumentRepository,
+        sources: AcademicItemSourceRepository,
     ) -> None:
         self._session = session
         self._gateway = gateway
@@ -135,6 +151,7 @@ class GenerationService:
         self._providers = providers
         self._subjects = subjects
         self._plan_docs = plan_docs
+        self._sources = sources
 
     @staticmethod
     def default_input() -> str:
@@ -457,7 +474,7 @@ class GenerationService:
                 or None
             )
         query = item.generation_prompt or item.title
-        context = await _retrieve_context(
+        context, sources = await _retrieve_context(
             self._retrieval,
             user_id=item.user_id,
             subject_id=subject_id,
@@ -478,6 +495,11 @@ class GenerationService:
 
         item.content = {"markdown": result.text, "provider": result.provider}
         item.generation_status = GenerationItemStatus.COMPLETED
+        # What it was written from, recorded next to what was written. An
+        # activity with no sources is not an error, it means the teacher
+        # selected no documents, but it is the difference between grounded and
+        # invented and the reader is entitled to know which they are holding.
+        await self._sources.replace(item.uuid, sources)
         if item.generation_id is not None:
             await self._repo.add_usage(item.generation_id, ledger)
         await self._session.commit()

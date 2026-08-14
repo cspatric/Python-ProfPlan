@@ -18,6 +18,9 @@ from app.infrastructure.celery.worker import celery_app
 from app.infrastructure.database.session import WorkerSessionFactory
 from app.infrastructure.redis.client import new_redis_client
 from app.infrastructure.telemetry.metrics import PLAN_DRAFT_SECONDS, PLAN_DRAFTS
+from app.modules.academic_items.infrastructure.source_repository import (
+    AcademicItemSourceRepository,
+)
 from app.modules.ai.infrastructure.gateway.llm_gateway import build_gateway
 from app.modules.ai.infrastructure.repository import AiProviderRepository
 from app.modules.documents.infrastructure.repository import (
@@ -56,6 +59,7 @@ def _build_service(session: AsyncSession, redis: Redis) -> GenerationService:
         providers=AiProviderRepository(session),
         subjects=SubjectRepository(session),
         plan_docs=PlanDocumentRepository(session),
+        sources=AcademicItemSourceRepository(session),
     )
 
 

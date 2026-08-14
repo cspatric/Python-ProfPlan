@@ -10,6 +10,9 @@ from app.modules.academic_items.application.service import AcademicItemService
 from app.modules.academic_items.infrastructure.repository import (
     AcademicItemRepository,
 )
+from app.modules.academic_items.infrastructure.source_repository import (
+    AcademicItemSourceRepository,
+)
 from app.modules.plan_modules.infrastructure.repository import ModuleRepository
 
 
@@ -18,7 +21,10 @@ def get_academic_item_service(
 ) -> AcademicItemService:
     """Build an AcademicItemService wired to the request-scoped session."""
     return AcademicItemService(
-        session, AcademicItemRepository(session), ModuleRepository(session)
+        session,
+        AcademicItemRepository(session),
+        ModuleRepository(session),
+        AcademicItemSourceRepository(session),
     )
 
 

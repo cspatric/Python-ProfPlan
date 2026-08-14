@@ -17,6 +17,7 @@ from app.modules.academic_items.presentation.dependencies import (
 from app.modules.academic_items.presentation.schemas import (
     AcademicItemCreate,
     AcademicItemResponse,
+    AcademicItemSourceResponse,
     AcademicItemUpdate,
 )
 from app.modules.auth.presentation.dependencies import CurrentUser
@@ -48,6 +49,12 @@ def _update_data(payload: AcademicItemUpdate) -> dict[str, Any]:
             payload.metadata.model_dump(mode="json") if payload.metadata else None
         )
     return data
+
+
+def _without_heading(excerpt: str, section: str | None) -> str:
+    if section and excerpt.startswith(section):
+        return excerpt[len(section) :].strip()
+    return excerpt
 
 
 def _to_response(item: AcademicItem) -> AcademicItemResponse:
@@ -106,6 +113,36 @@ async def get_academic_item(
     """Return a single academic item."""
     item = await service.get(user_id=user.uuid, item_id=item_id)
     return _to_response(item)
+
+
+@router.get("/{item_id}/sources", response_model=list[AcademicItemSourceResponse])
+async def get_academic_item_sources(
+    item_id: UUID, user: CurrentUser, service: AcademicItemServiceDep
+) -> list[AcademicItemSourceResponse]:
+    """The passages the AI was given before it wrote this item.
+
+    An empty list is a real answer and not a missing feature: it means the item
+    was written with no document behind it, which is exactly what the reader
+    needs to know before trusting a confident paragraph.
+    """
+    return [
+        AcademicItemSourceResponse(
+            rank=source.rank,
+            document_id=source.document_id,
+            document_title=title,
+            section=source.section,
+            # The stored excerpt is exactly what the model was shown, and the
+            # chunker prefixes every passage with its breadcrumb. Sending both
+            # would print the heading twice on a page that already shows it as
+            # the label, so it comes off here, at the edge, and stays in the
+            # database where it is evidence.
+            excerpt=_without_heading(source.excerpt, source.section),
+            # Cosine distance is what pgvector returns and similarity is what a
+            # person can read. The conversion is exact, not a rescaling.
+            similarity=None if source.distance is None else 1 - source.distance,
+        )
+        for source, title in await service.sources(user_id=user.uuid, item_id=item_id)
+    ]
 
 
 @router.get(

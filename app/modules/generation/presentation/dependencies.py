@@ -6,6 +6,9 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database.session import get_session
+from app.modules.academic_items.infrastructure.source_repository import (
+    AcademicItemSourceRepository,
+)
 from app.modules.ai.infrastructure.gateway.llm_gateway import get_gateway
 from app.modules.ai.infrastructure.repository import AiProviderRepository
 from app.modules.documents.infrastructure.repository import (
@@ -42,6 +45,7 @@ def get_generation_service(
         providers=AiProviderRepository(session),
         subjects=SubjectRepository(session),
         plan_docs=PlanDocumentRepository(session),
+        sources=AcademicItemSourceRepository(session),
     )
 
 

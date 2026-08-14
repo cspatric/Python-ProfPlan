@@ -61,6 +61,7 @@ def _service(**overrides) -> GenerationService:
         "providers": None,
         "subjects": None,
         "plan_docs": None,
+        "sources": None,
     }
     deps.update(overrides)
     return GenerationService(session=None, **deps)
