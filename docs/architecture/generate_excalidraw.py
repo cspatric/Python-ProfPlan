@@ -66,11 +66,11 @@ LAYERS = [
         "API · modules",
         ["A_AUTH", "A_CRUD", "A_DOC", "A_RAG", "A_AI", "A_GEN", "A_AUD", "A_OPS"],
     ),
-    ("DATA & MODELS", ["PG", "RDS", "MIO", "OLL", "ADM"]),
+    ("DATA & MODELS", ["PGB", "PG", "RDS", "MIO", "OLL", "MAIL", "ADM"]),
     ("LLM GATEWAY", ["GW", "CB", "PC", "PO", "PGM", "PL"]),
 ]
-ASYNC = ("ASYNC · Celery", ["WRK", "P1", "P2", "P3", "P4", "P5", "GENT", "FLW"])
-OBS = ("OBSERVABILITY", ["OTC", "TMP", "PTL", "LOK", "NEX", "PRM", "GRF"])
+ASYNC = ("ASYNC · Celery", ["WRK", "P1", "P2", "P3", "P4", "P5", "GENT", "MAILT", "FLW"])
+OBS = ("OBSERVABILITY", ["OTC", "TMP", "PTL", "LOK", "NEX", "PRM", "ALM", "GRF"])
 LEGEND = ("LEGEND", ["LG1", "LG2", "LG3", "LG4", "LG5", "LG6"])
 
 BOX_W = 320
@@ -134,13 +134,17 @@ def band(title, rows, top, trailing=None):
 
 y_async = band_bottom + 140
 y_obs = (
-    band(ASYNC[0], [["WRK", "GENT", "FLW"], ["P1", "P2", "P3", "P4", "P5"]], y_async)
+    band(
+        ASYNC[0],
+        [["WRK", "GENT", "MAILT", "FLW"], ["P1", "P2", "P3", "P4", "P5"]],
+        y_async,
+    )
     + 140
 )
 y_leg = (
     band(
         OBS[0],
-        [["OTC", "TMP"], ["PTL", "LOK"], ["NEX", "PRM"]],
+        [["OTC", "TMP"], ["PTL", "LOK"], ["NEX", "PRM", "ALM"]],
         y_obs,
         trailing="GRF",
     )
@@ -201,9 +205,18 @@ def frame_of(nid: str) -> str | None:
 
 bound: dict[str, list] = {nid: [] for nid in nodes}
 
+# Every node in the .mmd has to be placed by the layout above. Skipping the
+# unknown ones silently is how a corrected diagram can be exported missing the
+# very nodes that were added to it, while the summary still reports the full
+# count.
+unplaced = sorted(set(nodes) - set(pos))
+if unplaced:
+    raise SystemExit(
+        f"{len(unplaced)} node(s) in {SRC.name} have no place in the layout: "
+        f"{', '.join(unplaced)}. Add them to LAYERS, ASYNC, OBS or LEGEND."
+    )
+
 for nid, label in nodes.items():
-    if nid not in pos:
-        continue
     x0, y0, w, h = pos[nid]
     style = styles.get(
         node_style.get(nid, ""), {"fill": "#ffffff", "stroke": "#1e1e1e"}

@@ -52,13 +52,13 @@ subgraph API["⚙️ API — FastAPI (image profplan-backend)"]
 
   subgraph MOD["Modules — router ➜ service (presentation · application · domain · infrastructure)"]
     direction TB
-    DISP["APIRouter · prefix /api/v1<br/>auth cookie required<br/>(except login / register)"]
-    A_AUTH["auth · /auth/login refresh logout logout-all me<br/>AuthService — Argon2id · JWT 15min/30d<br/>rotating refresh + reuse detection · Redis lockout"]
-    A_CRUD["domain CRUD · /subjects /plans /modules /academic-items<br/>/academic-item-categories /types /icons /colors<br/>Services — every query scoped to user_id · soft delete"]
-    A_DOC["documents · POST upload → 202 · list · get · /status<br/>UploadService — extension + MIME + magic bytes<br/>100 MB bounded read → 413"]
+    DISP["APIRouter · prefix /api/v1<br/>uvicorn · UVICORN_WORKERS processes<br/>auth cookie required<br/>(except login / register)"]
+    A_AUTH["auth · register login refresh logout logout-all me<br/>password-reset(+confirm) · email-verification(+confirm)<br/>AuthService — Argon2id · JWT 15min/30d<br/>rotating refresh + reuse detection · Redis lockout"]
+    A_CRUD["domain CRUD · /subjects /plans /modules /academic-items<br/>/academic-item-categories /types /icons /colors<br/>GET /academic-items/{id}/handout.pdf — WeasyPrint<br/>Services — every query scoped to user_id · soft delete"]
+    A_DOC["documents · POST upload → 202 · list · get · /status · delete<br/>UploadService — extension + MIME + magic bytes<br/>100 MB bounded read → 413"]
     A_RAG["rag · POST /rag/query<br/>RetrievalService — embed → cosine top-k<br/>ALWAYS scoped to owned content_ids"]
     A_AI["ai · POST /ai/ask · GET /ai/health · PATCH /ai/providers/{name}<br/>AiService — RAG context + prompt safety<br/>« untrusted_document_context »"]
-    A_GEN["generation · POST /plans · GET /generations/{id}<br/>GenerationService — PlannerAgent + RoadmapReviewer<br/>plan (sync) → materialize → fan-out → poll"]
+    A_GEN["generation · POST /plans · POST /plans/{id}/generate<br/>GET /generations/{id}<br/>GenerationService — PlannerAgent + RoadmapReviewer<br/>plan (sync) → materialize → fan-out → poll"]
     A_AUD["audit · GET /audit-logs (admin)<br/>AuditRecorder — row staged in the SAME<br/>transaction as the business change"]
     A_OPS["ops · /health · /ready · /metrics · /docs · /static"]
     DISP --> A_AUTH
@@ -94,10 +94,12 @@ end
 %% ═══════════════════ DATA ═══════════════════
 subgraph DAT["🗄️ DATA & MODELS — internal network only"]
   direction TB
-  PG["PostgreSQL 17 + pgvector<br/>users · providers · user_providers · refresh_tokens<br/>auth_logs · audit_logs · subjects · plans · modules<br/>academic_items · categories(+types) · icons · colors<br/>document · document_content · document_format<br/>plan_generation · plan_document · ai_provider<br/>chunks vector(1024) · HNSW cosine<br/>SQLAlchemy 2.0 async · Alembic migrations"]
+  PGB["PgBouncer :6432<br/>transaction pooling<br/>asyncpg prepared statements OFF"]
+  PG["PostgreSQL 17 + pgvector<br/>users · providers · user_providers · refresh_tokens<br/>auth_logs · audit_logs · subjects · plans · modules<br/>academic_items · academic_item_category(+_types)<br/>icons · colors · verification_tokens<br/>document · document_content · document_format<br/>plan_generation · plan_document · ai_provider<br/>chunks vector(1024) · HNSW cosine<br/>SQLAlchemy 2.0 async · Alembic migrations"]
   RDS["Redis 8<br/>db0 cache · db1 Celery broker · db2 results<br/>db3 rate limit · login lockout<br/>embedding cache (7d) · circuit-breaker keys"]
   MIO["MinIO — S3<br/>bucket profplan<br/>raw files: {subject_id}/{uuid}.ext"]
   OLL["Ollama<br/>bge-m3 embeddings (1024-d)<br/>llama3.2:3b chat fallback"]
+  MAIL["Mailpit :8025<br/>SMTP :1025 — dev inbox"]
   ADM["Adminer :8081 — DB UI, dev profile"]
 end
 
@@ -105,14 +107,16 @@ end
 subgraph ASY["🧵 ASYNC — Celery worker (same image as the API)"]
   direction TB
   WRK["Celery worker · task_acks_late · prefetch 1<br/>retry 15s → 30s → 60s → FAILED<br/>NullPool engine (event-loop safe)"]
-  subgraph PIPE["task documents.ingest — RAG pipeline · idempotent (PROCESSING/INDEXED = no-op)"]
+  subgraph PIPE["task documents.ingest — RAG pipeline · INDEXED = no-op, PROCESSING taken over when stale"]
     direction LR
-    P1["fetch object"] --> P2["parse → Markdown<br/>pdf·docx·pptx<br/>xlsx·txt·md"] --> P3["header-aware chunking<br/>~1000 chars + overlap"] --> P4["embed bge-m3<br/>1024-d"] --> P5["index in pgvector<br/>status → INDEXED"]
+    P1["fetch object"] --> P2["parse → Markdown<br/>pdf·docx·pptx<br/>xlsx·txt·md"] --> P3["header-aware chunking<br/>~1000 chars + overlap<br/>total published"] --> P4["embed bge-m3 (1024-d)<br/>batches of 8 · 300s each<br/>count published per batch"] --> P5["index in pgvector<br/>status → INDEXED<br/>failure → FAILED + reason"]
   end
   GENT["task generation.run_item — one per academic item<br/>RAG context → LLM → content.markdown<br/>recompute run → RUNNING / COMPLETED / PARTIAL"]
+  MAILT["task emails.send<br/>password reset · email verification"]
   FLW["Flower :5555 — task/queue/failure monitor"]
   WRK --> P1
   WRK --> GENT
+  WRK --> MAILT
 end
 
 %% ═══════════════════ OBSERVABILITY ═══════════════════
@@ -120,37 +124,40 @@ subgraph OBS["📈 OBSERVABILITY — profile: observability"]
   direction LR
   OTC["OTel Collector<br/>OTLP :4317 / :4318"] --> TMP["Tempo<br/>traces"]
   PTL["Promtail<br/>docker socket"] --> LOK["Loki<br/>logs"]
-  NEX["node-exporter<br/>host CPU/mem/disk"] --> PRM["Prometheus :9090<br/>metrics"]
+  NEX["node-exporter<br/>host CPU/mem/disk"] --> PRM["Prometheus :9090<br/>metrics · alert rules"]
   TMP --> GRF["Grafana :3000<br/>metrics + logs + traces<br/>datasources provisioned"]
   LOK --> GRF
   PRM --> GRF
+  PRM -->|"fired alerts"| ALM["Alertmanager :9093<br/>routing · inhibit · Watchdog"]
 end
 
 %% ═══════════════════ FLOWS ═══════════════════
 TRF ==>|"Host: api.localhost"| M1
 
-A_AUTH -->|"① users · refresh_tokens · auth_logs"| PG
+A_AUTH -->|"① users · refresh_tokens · auth_logs"| PGB
 A_AUTH -.->|"① login attempt counter"| RDS
-A_CRUD -->|"② owner-scoped SQL"| PG
-A_AUD  -->|"⑧ audit_logs (same transaction)"| PG
+A_AUTH -.->|"① enqueue emails.send"| RDS
+MAILT  -->|"SMTP"| MAIL
+A_CRUD -->|"② owner-scoped SQL"| PGB
+A_AUD  -->|"⑧ audit_logs (same transaction)"| PGB
 
 A_DOC  -->|"③ put_object"| MIO
-A_DOC  -->|"③ document row = PENDING"| PG
+A_DOC  -->|"③ document row = PENDING"| PGB
 A_DOC  -.->|"③ enqueue documents.ingest"| RDS
 RDS    -.->|"③ ④ deliver task"| WRK
 P1     -->|"③ file bytes"| MIO
-P4     -->|"③ /api/embeddings"| OLL
+P4     -->|"③ /api/embed"| OLL
 P4     -.->|"③ embedding cache"| RDS
 P5     -->|"③ document_content + chunks"| PG
 
 A_GEN  ==>|"④ planner: draft → eval → repair"| GW
-A_GEN  -->|"④ plan_generation + modules + items (PENDING)"| PG
+A_GEN  -->|"④ plan_generation + modules + items (PENDING)"| PGB
 A_GEN  -.->|"④ fan-out: 1 task per item"| RDS
 GENT   ==>|"④ generate item"| GW
 GENT   -->|"④ item content + run status"| PG
 
 A_RAG  -->|"⑤ embed question"| OLL
-A_RAG  -->|"⑤ cosine top-k over chunks"| PG
+A_RAG  -->|"⑤ cosine top-k over chunks"| PGB
 A_AI   ==>|"⑥ answer grounded in context"| GW
 CB     -.->|"⑥ breaker keys"| RDS
 
@@ -160,6 +167,7 @@ M2     -.->|"⑦ stdout JSON logs"| PTL
 WRK    -.->|"⑦ stdout JSON logs"| PTL
 A_OPS  -.->|"⑦ /metrics scrape"| PRM
 FLW    -.-> RDS
+PGB    -->|"pooled sessions"| PG
 ADM    -.-> PG
 
 %% ═══════════════════ STYLE ═══════════════════
@@ -172,10 +180,10 @@ classDef obs   fill:#e6f7f7,stroke:#0d9488,stroke-width:2px,color:#0b1220
 
 class CLI,TRF edge
 class DISP,M1,M2,M3,M4,A_AUTH,A_CRUD,A_DOC,A_RAG,A_AI,A_GEN,A_AUD,A_OPS api
-class WRK,P1,P2,P3,P4,P5,GENT,FLW asyn
-class PG,RDS,MIO,OLL,ADM data
+class WRK,P1,P2,P3,P4,P5,GENT,MAILT,FLW asyn
+class PGB,PG,RDS,MIO,OLL,MAIL,ADM data
 class GW,CB,PC,PO,PGM,PL llm
-class OTC,TMP,PTL,LOK,PRM,NEX,GRF obs
+class OTC,TMP,PTL,LOK,PRM,ALM,NEX,GRF obs
 ```
 
 **Reading the diagram**
@@ -260,11 +268,24 @@ The bytes go to **MinIO**, a `document` row is created `PENDING`, the request
 returns **202**, and a Celery task is enqueued.
 The worker then runs: **fetch → parse to Markdown → header-aware chunking →
 embed with bge-m3 → index in pgvector**, and only then flips the status to
-`INDEXED`. The task is **idempotent** (a redelivery for a document already
-`PROCESSING`/`INDEXED` is a no-op) — which is what makes `task_acks_late` safe:
-a worker crash redelivers the task instead of losing it. Transient failures
-retry with backoff (15/30/60s); after that the document is marked `FAILED` with
-the error visible at `GET /documents/{id}/status`.
+`INDEXED`.
+
+Embedding is the slow step and it goes in **batches of 8**, each its own
+request with its own timeout. That is not about speed, which the model decides
+(about five seconds a chunk on a CPU), but about finishing: one request
+carrying every chunk of a long document could not complete inside any sane
+timeout, so large documents never indexed at all. The chunk total is published
+once the text is chunked and the count after each batch, which is what lets the
+page show real progress and an estimate measured from the rate the machine is
+actually managing.
+
+The task is **idempotent**: a redelivery for a document already `INDEXED` is a
+no-op, and one still `PROCESSING` is left alone *while someone is on it*. Past
+a staleness threshold it is taken over, because a run killed by a timeout or a
+reboot leaves a `PROCESSING` row nobody is working on, and skipping it was what
+made a failed ingestion permanent. A failure now always lands in `FAILED` with
+its reason, which is both what the page reads and what tells the retry it may
+take the work. Transient failures retry with backoff (15/30/60s).
 
 ### ④ Plan generation — sync planner, async fan-out
 `POST /plans` is the flagship flow, in this exact order:
@@ -314,9 +335,12 @@ on each request line, so a log jumps straight to its span. Traces are opt-in
 (`OTEL_ENABLED`) and auto-instrument FastAPI, SQLAlchemy, Redis, httpx and
 Celery → **OTel Collector → Tempo**; context propagates through the Redis
 broker, so an upload and its background ingestion appear in **one trace**.
-**Prometheus** scrapes `/metrics` and **node-exporter**; **Grafana** has all
-three datasources pre-provisioned. **Flower** covers what Prometheus can't:
-per-task detail.
+**Prometheus** scrapes `/metrics` and **node-exporter**, and evaluates the
+alert rules in `docker/prometheus/rules/`; anything that fires goes to
+**Alertmanager**, which routes it and suppresses the noise a single outage
+would otherwise produce (a Watchdog alert fires permanently, so silence from
+the alerting path is itself detectable). **Grafana** has all three datasources
+pre-provisioned. **Flower** covers what Prometheus can't: per-task detail.
 
 ### ⑧ Audit trail
 `AuditRecorder` stages an `audit_logs` row **inside the caller's own
