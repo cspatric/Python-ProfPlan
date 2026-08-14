@@ -55,3 +55,45 @@ class TestCreatePlan:
             },
         )
         assert resp.status_code == 404
+
+
+async def test_creating_a_plan_returns_before_the_planner_runs(
+    auth_client, subject_id, monkeypatch
+):
+    """The request must not wait on the AI.
+
+    The planner costs up to a minute, and a browser that lost the connection
+    meanwhile left the teacher with nothing on screen and a plan in the
+    database. Creation now answers with a run to watch, and the drafting is
+    queued.
+    """
+    from app.core.config import get_settings
+    from app.infrastructure.celery.tasks import generate as generate_tasks
+
+    queued: list[tuple] = []
+    monkeypatch.setattr(
+        generate_tasks.generate_plan, "delay", lambda *args: queued.append(args)
+    )
+    monkeypatch.setattr(get_settings(), "plan_generation_enabled", True, raising=False)
+
+    resp = await auth_client.post(
+        "/api/v1/plans",
+        json={
+            "subject_id": subject_id,
+            "starts_at": "2026-09-01",
+            "ends_at": "2026-10-01",
+            "class_duration": 50,
+            "class_per_week": 2,
+            "exam_count": 2,
+            "item_kinds": ["conteudo", "prova"],
+        },
+    )
+
+    assert resp.status_code == 201
+    body = resp.json()
+    # A run to poll, already open, with nothing generated yet.
+    assert body["generation"]["status"] == "planning"
+    assert body["generation"]["items"] == []
+    # And the drafting was handed to a worker rather than done here.
+    assert len(queued) == 1
+    assert queued[0][0] == body["uuid"]

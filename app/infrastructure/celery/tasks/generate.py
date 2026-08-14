@@ -86,3 +86,54 @@ def run_item(self, item_id: str) -> None:
             raise
         # Exponential backoff: 15s, 30s, 60s.
         raise self.retry(exc=exc, countdown=15 * 2**self.request.retries) from exc
+
+
+async def _plan(plan_id: UUID, user_id: UUID, run_id: UUID, teacher_input: str | None):
+    redis = new_redis_client()
+    try:
+        async with WorkerSessionFactory() as session:
+            service = _build_service(session, redis)
+            return await service.plan_existing_run(
+                user_id=user_id,
+                plan_id=plan_id,
+                run_id=run_id,
+                teacher_input=teacher_input,
+            )
+    finally:
+        await redis.aclose()
+
+
+async def _fail_run(run_id: UUID, error: str) -> None:
+    redis = new_redis_client()
+    try:
+        async with WorkerSessionFactory() as session:
+            await _build_service(session, redis).fail_run(run_id, error)
+    finally:
+        await redis.aclose()
+
+
+@celery_app.task(bind=True, name="plans.generate", max_retries=_MAX_RETRIES)
+def generate_plan(
+    self, plan_id: str, user_id: str, run_id: str, teacher_input: str | None = None
+) -> None:
+    """Draft the roadmap for a plan, then fan out one task per item.
+
+    This is the call that used to happen inside the HTTP request. It takes up
+    to a minute, and a browser that lost the connection meanwhile left the
+    teacher with no plan on screen and a plan in the database.
+    """
+    run_uuid = UUID(run_id)
+    try:
+        items = asyncio.run(
+            _plan(UUID(plan_id), UUID(user_id), run_uuid, teacher_input)
+        )
+    except Exception as exc:
+        if self.request.retries >= self.max_retries:
+            # The run carries the reason, which is what the page reads: a plan
+            # whose roadmap never arrived has to say so rather than spin.
+            asyncio.run(_fail_run(run_uuid, str(exc)))
+            raise
+        raise self.retry(exc=exc, countdown=15 * 2**self.request.retries) from exc
+
+    for item_id in items:
+        run_item.delay(str(item_id))

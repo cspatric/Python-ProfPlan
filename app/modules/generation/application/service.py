@@ -1,5 +1,6 @@
 """Plan-generation use cases: plan (sync) -> fan-out (async) -> poll."""
 
+from collections.abc import Mapping, Sequence
 from datetime import date, timedelta
 from uuid import UUID
 
@@ -15,7 +16,11 @@ from app.modules.generation.domain.entities import (
     GenerationRunStatus,
 )
 from app.modules.generation.domain.exceptions import GenerationNotFoundError
-from app.modules.generation.domain.item_kinds import is_graded, normalize_kind
+from app.modules.generation.domain.item_kinds import (
+    ItemKind,
+    is_graded,
+    normalize_kind,
+)
 from app.modules.generation.domain.plan_brief import PlanBrief, build_plan_brief
 from app.modules.generation.domain.prompts import (
     GENERATOR_SYSTEM,
@@ -39,11 +44,17 @@ from app.modules.teaching_plans.infrastructure.models import Plan
 from app.modules.teaching_plans.infrastructure.repository import PlanRepository
 
 
-def _brief(plan: Plan) -> PlanBrief:
+def _brief(
+    plan: Plan,
+    *,
+    item_counts: Mapping[ItemKind, int] | None = None,
+    item_kinds: Sequence[ItemKind] | None = None,
+) -> PlanBrief:
     """Describe a persisted plan exactly as the creation path described it.
 
     The worker generating each item reads this too, so an item is written for
-    the same audience and level the roadmap was planned for.
+    the same audience and level the roadmap was planned for. The composition
+    is not on the plan, so the caller passes what the run recorded.
     """
     return build_plan_brief(
         starts_at=plan.starts_at,
@@ -55,6 +66,8 @@ def _brief(plan: Plan) -> PlanBrief:
         objectives=plan.objectives,
         prior_knowledge=plan.prior_knowledge,
         resources=plan.resources,
+        item_counts=item_counts,
+        item_kinds=item_kinds,
     )
 
 
@@ -224,6 +237,96 @@ class GenerationService:
             teacher_input=teacher_input or self.default_input(),
         )
 
+    async def begin(
+        self,
+        *,
+        user_id: UUID,
+        plan_id: UUID,
+        teacher_input: str | None,
+        item_counts: Mapping[ItemKind, int] | None = None,
+        item_kinds: Sequence[ItemKind] | None = None,
+    ) -> PlanGeneration:
+        """Open a run before the planner is called, and commit it.
+
+        The row has to exist first so the request can answer with something to
+        watch and a failure has somewhere to be recorded. Creating it only
+        after a successful plan is what made the planner call have to be
+        synchronous: nothing else could tell the caller that a plan was being
+        drafted, or that the drafting had failed.
+        """
+        # The composition the teacher chose is not a column of the plan, so it
+        # is kept with the run that has to honour it. Dropping it here would
+        # quietly ignore "three exams" the moment the planner moved off the
+        # request thread.
+        run = PlanGeneration(
+            plan_id=plan_id,
+            user_id=user_id,
+            status=GenerationRunStatus.PLANNING,
+            input={
+                "request": teacher_input,
+                "counts": {kind.value: n for kind, n in (item_counts or {}).items()},
+                "kinds": [kind.value for kind in (item_kinds or [])],
+            },
+        )
+        self._repo.add(run)
+        await self._session.commit()
+        await self._session.refresh(run)
+        return run
+
+    async def fail_run(self, run_id: UUID, error: str) -> None:
+        """Record that a run could not be planned, with the reason."""
+        run = await self._repo.get_for_processing(run_id)
+        if run is None:
+            return
+        run.status = GenerationRunStatus.FAILED
+        run.error = error[:2000]
+        await self._session.commit()
+
+    async def plan_existing_run(
+        self, *, user_id: UUID, plan_id: UUID, run_id: UUID, teacher_input: str | None
+    ) -> list[UUID]:
+        """Draft the roadmap for an already-open run and materialise it.
+
+        Returns the ids of the items to fan out. Called from the worker, which
+        is where the planner call belongs: it costs up to a minute, and a
+        request that spends a minute holding a connection open is a request
+        that a dropped connection turns into a plan nobody can see.
+        """
+        plan = await self._plans.get_by_id(plan_id, user_id)
+        if plan is None:
+            raise PlanNotFoundError
+        run = await self._repo.get_for_processing(run_id)
+        if run is None:
+            raise GenerationNotFoundError
+
+        content_ids = (
+            await self._plan_docs.content_ids_for_plan(plan_id, user_id) or None
+        )
+        asked = run.input or {}
+        brief = _brief(
+            plan,
+            item_counts={
+                ItemKind(kind): n for kind, n in (asked.get("counts") or {}).items()
+            },
+            item_kinds=[ItemKind(kind) for kind in (asked.get("kinds") or [])],
+        )
+        roadmap = await self.plan_roadmap(
+            user_id=user_id,
+            subject_id=plan.subject_id,
+            plan_info=brief.info,
+            teacher_input=teacher_input,
+            content_ids=content_ids,
+            classes=brief.classes,
+        )
+        _, items = await self.materialize(
+            user_id=user_id,
+            plan=plan,
+            roadmap=roadmap,
+            teacher_input=teacher_input or self.default_input(),
+            run=run,
+        )
+        return [item.uuid for item in items]
+
     async def materialize(
         self,
         *,
@@ -231,19 +334,23 @@ class GenerationService:
         plan: Plan,
         roadmap: Roadmap,
         teacher_input: str,
+        run: PlanGeneration | None = None,
     ) -> tuple[PlanGeneration, list[AcademicItem]]:
         """Persist a validated roadmap: run + modules + pending items.
 
-        The caller enqueues one worker task per returned item.
+        The caller enqueues one worker task per returned item. An existing
+        `run` (opened by `begin`) is filled in rather than replaced, so the id
+        the caller was already given stays the one to poll.
         """
-        run = PlanGeneration(
-            plan_id=plan.uuid,
-            user_id=user_id,
-            status=GenerationRunStatus.RUNNING,
-            input={"request": teacher_input},
-            roadmap=roadmap.model_dump(),
-        )
-        self._repo.add(run)
+        if run is None:
+            run = PlanGeneration(
+                plan_id=plan.uuid,
+                user_id=user_id,
+                input={"request": teacher_input},
+            )
+            self._repo.add(run)
+        run.status = GenerationRunStatus.RUNNING
+        run.roadmap = roadmap.model_dump()
         await self._session.flush()
 
         items: list[AcademicItem] = []

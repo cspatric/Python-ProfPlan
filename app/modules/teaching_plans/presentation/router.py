@@ -8,7 +8,6 @@ from fastapi import APIRouter, Query, Request, Response, status
 from app.api.rate_limit import expensive_limit
 from app.core.config import get_settings
 from app.modules.auth.presentation.dependencies import CurrentUser
-from app.modules.generation.domain.plan_brief import build_plan_brief
 from app.modules.generation.presentation.dependencies import GenerationServiceDep
 from app.modules.generation.presentation.schemas import build_generation_response
 from app.modules.teaching_plans.presentation.dependencies import PlanServiceDep
@@ -48,75 +47,53 @@ async def create_plan(
     service: PlanServiceDep,
     generation_service: GenerationServiceDep,
 ) -> PlanCreatedResponse:
-    """Create a plan and automatically generate it with AI.
+    """Create a plan; the AI drafts it in the background.
 
-    The planner runs synchronously BEFORE anything is persisted — if the AI
-    cannot produce a roadmap the request fails (502/503) and no plan is
-    created. On success the roadmap comes back embedded in ``generation`` and
-    the per-item generation is queued to workers — poll GET /generations/{id}
-    to watch the items fill in.
+    The planner call costs up to a minute. It used to run inside this request,
+    which meant a browser that lost the connection meanwhile left the teacher
+    with nothing on screen and a plan in the database. The plan is created
+    here, a generation run is opened as PLANNING, and the drafting is queued:
+    the response comes back at once with the run to poll.
+
+    The trade is deliberate. A plan can now exist before its roadmap does, and
+    a planner failure lands on the run (FAILED, with the reason) instead of
+    failing the request. That state is visible; a request nobody is waiting on
+    is not.
     """
     # Imported lazily: pulling the Celery task graph at module load time
     # creates an import cycle that breaks the API router.
-    from app.infrastructure.celery.tasks.generate import run_item
+    from app.infrastructure.celery.tasks.generate import generate_plan
 
-    # 1) AI first (no side effects) — failures surface as real errors.
-    #    Validate the selected documents and scope RAG to them.
-    content_ids = (
-        await generation_service.resolve_documents(
-            user_id=user.uuid, document_ids=payload.document_ids
-        )
-        or None
+    # Validate the selected documents before anything is written: a 404 for an
+    # unknown document belongs in the response, not in a worker log.
+    await generation_service.resolve_documents(
+        user_id=user.uuid, document_ids=payload.document_ids
     )
 
-    # When generation is disabled (CI / no LLM configured), create a plain plan:
-    # no AI call, no fan-out, generation is null in the response.
-    if not get_settings().plan_generation_enabled:
-        plan = await service.create(
-            user_id=user.uuid,
-            data=payload.model_dump(exclude=_GENERATION_ONLY_FIELDS),
-        )
-        await generation_service.link_documents_and_commit(
-            plan.uuid, payload.document_ids
-        )
-        return PlanCreatedResponse.model_validate(plan)
-
-    brief = build_plan_brief(
-        starts_at=payload.starts_at,
-        ends_at=payload.ends_at,
-        class_per_week=payload.class_per_week,
-        class_duration=payload.class_duration,
-        level=payload.level,
-        audience=payload.audience,
-        objectives=payload.objectives,
-        prior_knowledge=payload.prior_knowledge,
-        resources=payload.resources,
-        item_counts=payload.requested_counts(),
-        item_kinds=payload.item_kinds,
-    )
-    teacher_input = payload.input or generation_service.default_input()
-    roadmap = await generation_service.plan_roadmap(
-        user_id=user.uuid,
-        subject_id=payload.subject_id,
-        plan_info=brief.info,
-        teacher_input=teacher_input,
-        content_ids=content_ids,
-        classes=brief.classes,
-    )
-
-    # 2) Persist plan + document links + roadmap, then fan out to workers.
     plan = await service.create(
         user_id=user.uuid, data=payload.model_dump(exclude=_GENERATION_ONLY_FIELDS)
     )
-    generation_service.link_documents(plan.uuid, payload.document_ids)
-    run, items = await generation_service.materialize(
-        user_id=user.uuid, plan=plan, roadmap=roadmap, teacher_input=teacher_input
+    await generation_service.link_documents_and_commit(plan.uuid, payload.document_ids)
+
+    # When generation is disabled (CI / no LLM configured), the plan is all
+    # there is: no run, no queue, generation is null in the response.
+    if not get_settings().plan_generation_enabled:
+        return PlanCreatedResponse.model_validate(plan)
+
+    teacher_input = payload.input or generation_service.default_input()
+    run = await generation_service.begin(
+        user_id=user.uuid,
+        plan_id=plan.uuid,
+        teacher_input=teacher_input,
+        item_counts=payload.requested_counts(),
+        item_kinds=payload.item_kinds,
     )
-    for item in items:
-        run_item.delay(str(item.uuid))
+    generate_plan.delay(str(plan.uuid), str(user.uuid), str(run.uuid), teacher_input)
 
     response = PlanCreatedResponse.model_validate(plan)
-    response.generation = build_generation_response(run, items)
+    # No items yet: the roadmap that decides them has not been drafted. The
+    # run is what the client watches until they appear.
+    response.generation = build_generation_response(run, [])
     return response
 
 
