@@ -63,3 +63,9 @@ perf:
 # Ramp concurrency until the SLO breaks and report the capacity ceiling.
 perf-capacity:
 	SHAPE=step STEP_START=25 STEP_USERS=25 STEP_TIME=60 STEP_MAX=300 perf/run.sh
+
+backup:  ## Back up the database and the uploaded files (see docs/deployment/BACKUP.md)
+	./scripts/backup.sh $(DEST)
+
+restore:  ## Restore a backup: make restore SRC=backups/<timestamp>
+	./scripts/restore.sh $(SRC)
