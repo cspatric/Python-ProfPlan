@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Bootstrap for the application host. Runs once, on first boot.
+#
+# Deliberately small: it installs a container runtime and hands over to the
+# same compose file used everywhere else. Anything more here is configuration
+# that lives only on a machine nobody can rebuild.
+set -euo pipefail
+
+dnf update -y
+dnf install -y docker git
+systemctl enable --now docker
+
+# Compose v2 as a plugin, on the arm64 the t4g instances run.
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL \
+  "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# The application reads its own secrets from Parameter Store using the
+# instance role, so nothing sensitive is written to this disk. Only the two
+# lines that say where to look.
+install -d -m 0750 /opt/profplan
+cat > /opt/profplan/.env <<ENVIRONMENT
+APP_ENV=${environment}
+DEBUG=false
+SECRETS_PROVIDER=aws-ssm
+SECRETS_PATH=${secrets_path}
+AWS_REGION=${region}
+S3_BUCKET=${bucket}
+ENVIRONMENT
+chmod 0640 /opt/profplan/.env
+
+# The CloudWatch agent ships the container logs. Prometheus and Loki still run
+# in the stack; this is the copy that survives the instance being replaced.
+dnf install -y amazon-cloudwatch-agent
+cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json <<AGENT
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/lib/docker/containers/*/*.log",
+            "log_group_name": "/profplan/${environment}/containers",
+            "retention_in_days": 30
+          }
+        ]
+      }
+    }
+  }
+}
+AGENT
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json
+
+echo "host ready; deploy the stack into /opt/profplan"

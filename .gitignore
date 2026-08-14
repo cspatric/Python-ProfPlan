@@ -80,3 +80,12 @@ docker/alertmanager/slack_api_url
 # change wholesale on every rebuild.
 docs/study/*.pdf
 backups/
+
+# Terraform: local state, the plugin cache and any plan file. State holds the
+# database password and every generated secret, so it never belongs in git.
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/*.tfplan
+infra/*.tfvars
+!infra/*.tfvars.example

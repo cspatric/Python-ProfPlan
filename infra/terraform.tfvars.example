@@ -1,0 +1,14 @@
+# Copy to terraform.tfvars and edit. That file is gitignored.
+
+region      = "us-east-1"
+environment = "production"
+
+# Leave empty to skip DNS, the certificate and CloudFront. The stack then
+# answers on the instance's address, which is enough to prove it runs.
+domain_name = ""
+
+# Where CloudWatch alarms go. Empty means they exist and notify nobody.
+alert_email = ""
+
+# Empty means port 22 is never opened. Use `aws ssm start-session` instead.
+allowed_ssh_cidr = []
