@@ -3,7 +3,8 @@
 <!--
 This file is the FIRST prompt sent to the AI when a plan is created.
 Edit it freely — the code loads it at call time and replaces the tokens:
-  [[PLAN_INFO]]      -> plan parameters (period, classes/week, duration)
+  [[PLAN_INFO]]      -> plan parameters (period, classes/week, duration,
+                        and the composition the teacher asked for)
   [[TEACHER_INPUT]]  -> the teacher's free-text request
   [[CONTEXT_BLOCK]]  -> RAG excerpts from the teacher's documents (may be empty)
 Everything below the divider is sent verbatim (tokens replaced).
@@ -40,14 +41,25 @@ fences, no commentary), matching exactly this shape:
       "items": [
         {
           "title": "item title",
-          "kind": "conteudo | atividade | prova | bibliografia | ...",
-          "when": "optional target, e.g. 'semana 2' or 'dia 20' or null",
+          "kind": "one of: conteudo, leitura, exercicios, atividade, laboratorio, projeto, seminario, trabalho, quiz, prova, bibliografia",
+          "date": "the day this item happens, as YYYY-MM-DD, inside the plan period",
           "prompt": "a self-contained instruction telling another AI exactly what to generate for this item"
         }
       ]
     }
   ]
 }
+
+Every item needs a `date`. Give a real day in `YYYY-MM-DD`, inside the plan
+period and inside the stretch its module covers, ordered so the plan reads
+forward in time. Do not write "semana 2" or leave it null: the date is what
+puts the item on the teacher's calendar, and a plan whose activities have no
+day is not a plan. Respect the classes per week: do not stack items on days the
+class does not meet.
+
+The `kind` field must be one of the eleven listed above, spelled exactly.
+The plan parameters may restrict which of them you may use, or demand an exact
+number of a given kind; when they do, that is a requirement, not a preference.
 
 The `prompt` field is the one that matters most. Another AI receives it alone,
 without this roadmap, without the plan parameters and without the teacher's
@@ -77,13 +89,13 @@ a hands-on activity and one written test at the end.
         {
           "title": "Cell theory and the discovery of the cell",
           "kind": "conteudo",
-          "when": "semana 1",
+          "date": "2026-03-03",
           "prompt": "Write the class content for a 50-minute introductory lesson on cell theory, for high-school students with no prior biology. Cover the three postulates of cell theory, the historical path from Hooke and Leeuwenhoek to Schwann and Virchow, and why the microscope was the precondition for the theory. Use plain language, include one analogy for cell size (orders of magnitude vs everyday objects), and end with 3 review questions and their answers."
         },
         {
           "title": "Microscopy lab: observing onion epidermis cells",
           "kind": "atividade",
-          "when": "semana 2",
+          "date": "2026-03-12",
           "prompt": "Write a hands-on lab activity for high-school students, to be run in one 50-minute class, in which they prepare and observe an onion epidermis slide under an optical microscope. Include: materials list (assume a basic school lab), numbered step-by-step preparation instructions, safety notes, what students should draw and label in their report, and 3 guiding questions connecting what they see to cell theory. Add a short teacher's note on the two mistakes students most often make."
         }
       ]
@@ -95,13 +107,13 @@ a hands-on activity and one written test at the end.
         {
           "title": "Organelles and their functions",
           "kind": "conteudo",
-          "when": "semana 3",
+          "date": "2026-03-19",
           "prompt": "Write the class content for two 50-minute lessons for high-school students on eukaryotic cell organelles: nucleus, mitochondria, ribosomes, endoplasmic reticulum, Golgi apparatus, lysosomes, and (for plant cells) chloroplasts and cell wall. For each, give its structure in 2-3 sentences, its function, and one consequence of it failing. Include a comparison table of animal vs plant cells and end with 5 review questions with answers."
         },
         {
           "title": "Written test: introduction to the cell",
           "kind": "prova",
-          "when": "semana 4",
+          "date": "2026-03-26",
           "prompt": "Write a 50-minute written test for high-school students covering cell theory, prokaryotes vs eukaryotes, the microscopy lab on onion epidermis, and organelle functions. Structure: 6 multiple-choice questions (4 options each), 2 short-answer questions, and 1 question interpreting a described microscope image. Include the answer key and the point value of each question, totalling 10 points."
         }
       ]

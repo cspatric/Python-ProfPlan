@@ -15,12 +15,14 @@ from app.modules.generation.domain.entities import (
     GenerationRunStatus,
 )
 from app.modules.generation.domain.exceptions import GenerationNotFoundError
+from app.modules.generation.domain.item_kinds import is_graded, normalize_kind
 from app.modules.generation.domain.plan_brief import PlanBrief, build_plan_brief
 from app.modules.generation.domain.prompts import (
     GENERATOR_SYSTEM,
     build_item_prompt,
 )
 from app.modules.generation.domain.roadmap import Roadmap
+from app.modules.generation.domain.scheduling import schedule_items
 from app.modules.generation.infrastructure.models import PlanGeneration
 from app.modules.generation.infrastructure.plan_document_repository import (
     PlanDocumentRepository,
@@ -38,11 +40,21 @@ from app.modules.teaching_plans.infrastructure.repository import PlanRepository
 
 
 def _brief(plan: Plan) -> PlanBrief:
+    """Describe a persisted plan exactly as the creation path described it.
+
+    The worker generating each item reads this too, so an item is written for
+    the same audience and level the roadmap was planned for.
+    """
     return build_plan_brief(
         starts_at=plan.starts_at,
         ends_at=plan.ends_at,
         class_per_week=plan.class_per_week,
         class_duration=plan.class_duration,
+        level=plan.level,
+        audience=plan.audience,
+        objectives=plan.objectives,
+        prior_knowledge=plan.prior_knowledge,
+        resources=plan.resources,
     )
 
 
@@ -250,7 +262,14 @@ class GenerationService:
             )
             self._session.add(module)
             await self._session.flush()
-            for planned_item in planned_module.items:
+
+            # Every item gets a real day: the planner's when it gave a usable
+            # one, a computed slot inside the module otherwise.
+            days = schedule_items(
+                [item.date for item in planned_module.items], start=m_start, end=m_end
+            )
+            for planned_item, day in zip(planned_module.items, days, strict=True):
+                kind = normalize_kind(planned_item.kind)
                 item = AcademicItem(
                     user_id=user_id,
                     module_id=module.uuid,
@@ -260,9 +279,13 @@ class GenerationService:
                     generation_id=run.uuid,
                     generation_status=GenerationItemStatus.PENDING,
                     generation_prompt=planned_item.prompt,
+                    # The shape the API and the frontend read (see
+                    # AcademicItemMetadata): a day, and whether it is marked.
                     item_metadata={
-                        "kind": planned_item.kind,
-                        "when": planned_item.when,
+                        "kind": kind.value,
+                        "starts_at": day.isoformat(),
+                        "ends_at": day.isoformat(),
+                        "is_graded": is_graded(kind),
                     },
                 )
                 self._session.add(item)

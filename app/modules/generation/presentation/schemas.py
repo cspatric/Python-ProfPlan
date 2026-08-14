@@ -28,7 +28,9 @@ class GeneratedItemResponse(BaseModel):
     module_id: UUID
     title: str
     kind: str | None
-    when: str | None
+    #: The day the item lands on, ISO. Replaces the old free-text `when`,
+    #: which held things like "semana 2" and could not be put on a calendar.
+    date: str | None
     generation_status: GenerationItemStatus | None
     content: dict[str, Any] | None
     error: str | None
@@ -52,7 +54,7 @@ def _item_response(item: AcademicItem) -> GeneratedItemResponse:
         module_id=item.module_id,
         title=item.title,
         kind=meta.get("kind"),
-        when=meta.get("when"),
+        date=meta.get("starts_at"),
         generation_status=item.generation_status,
         content=item.content,
         error=item.generation_error,

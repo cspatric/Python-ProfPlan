@@ -15,10 +15,17 @@ class PlannedItem(BaseModel):
     kind: str = Field(
         min_length=1,
         max_length=64,
-        description="e.g. prova, atividade, conteudo, bibliografia",
+        description="one of the kinds listed in the prompt, e.g. prova, atividade",
     )
-    when: str | None = Field(
-        default=None, description="target date/week, e.g. 'dia 20' or 'semana 3'"
+    # Deliberately a string, not a `date`. The planner is asked for an ISO day
+    # and usually gives one, but a model that answers "semana 3" must not
+    # invalidate the whole roadmap: the caller parses this leniently and falls
+    # back to a computed day. A strict type here would trade a schedulable
+    # plan for a 502.
+    date: str | None = Field(
+        default=None,
+        max_length=64,
+        description="the day this item happens, as YYYY-MM-DD, inside the plan period",
     )
     prompt: str = Field(
         min_length=1, description="the exact request to send to the LLM for this item"

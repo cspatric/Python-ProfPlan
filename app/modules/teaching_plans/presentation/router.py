@@ -23,6 +23,18 @@ logger = logging.getLogger("app.plans")
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 
+#: Fields of PlanCreate that steer the generation and are not columns of the
+#: plan. Dumping them into the model would try to set attributes that do not
+#: exist on the table.
+_GENERATION_ONLY_FIELDS = {
+    "input",
+    "document_ids",
+    "activity_count",
+    "exam_count",
+    "assignment_count",
+    "item_kinds",
+}
+
 
 @router.post(
     "", response_model=PlanCreatedResponse, status_code=status.HTTP_201_CREATED
@@ -62,7 +74,7 @@ async def create_plan(
     if not get_settings().plan_generation_enabled:
         plan = await service.create(
             user_id=user.uuid,
-            data=payload.model_dump(exclude={"input", "document_ids"}),
+            data=payload.model_dump(exclude=_GENERATION_ONLY_FIELDS),
         )
         await generation_service.link_documents_and_commit(
             plan.uuid, payload.document_ids
@@ -74,6 +86,13 @@ async def create_plan(
         ends_at=payload.ends_at,
         class_per_week=payload.class_per_week,
         class_duration=payload.class_duration,
+        level=payload.level,
+        audience=payload.audience,
+        objectives=payload.objectives,
+        prior_knowledge=payload.prior_knowledge,
+        resources=payload.resources,
+        item_counts=payload.requested_counts(),
+        item_kinds=payload.item_kinds,
     )
     teacher_input = payload.input or generation_service.default_input()
     roadmap = await generation_service.plan_roadmap(
@@ -87,7 +106,7 @@ async def create_plan(
 
     # 2) Persist plan + document links + roadmap, then fan out to workers.
     plan = await service.create(
-        user_id=user.uuid, data=payload.model_dump(exclude={"input", "document_ids"})
+        user_id=user.uuid, data=payload.model_dump(exclude=_GENERATION_ONLY_FIELDS)
     )
     generation_service.link_documents(plan.uuid, payload.document_ids)
     run, items = await generation_service.materialize(
