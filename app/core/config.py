@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.secrets import load_secrets
+
 
 class Settings(BaseSettings):
     """Strongly-typed application configuration."""
@@ -227,5 +229,12 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Return a cached Settings instance."""
+    """Return a cached Settings instance.
+
+    Secrets are pulled in first, from whatever `SECRETS_PROVIDER` points at,
+    and refused if they would not survive contact with anyone. Doing it here
+    rather than in `main.py` means the check runs for the workers and the
+    migrations too, not only for the API.
+    """
+    load_secrets()
     return Settings()
