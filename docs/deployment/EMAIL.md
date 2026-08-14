@@ -36,10 +36,48 @@ That is the default, and it is the right default: developing against a real
 provider means burning quota and, eventually, sending a test message to a real
 person.
 
-## Real delivery: Gmail with an app password
+## Real delivery: Resend
 
-For a personal project this is the shortest honest path: free, 500 messages a
-day, no domain required.
+Resend speaks SMTP, so nothing in the application changes. 3.000 messages a
+month on the free plan.
+
+1. Create the account at <https://resend.com>, then **API Keys**, create one
+   with sending permission and copy it. It starts with `re_` and is shown once.
+2. Configure:
+
+```
+EMAIL_ENABLED=true
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=587
+SMTP_USE_TLS=true
+SMTP_USERNAME=resend
+SMTP_PASSWORD=re_...
+EMAIL_FROM_ADDRESS=onboarding@resend.dev
+EMAIL_FROM_NAME=ProfPlan
+```
+
+Port 587 with STARTTLS, not 465. The adapter upgrades a plain socket, which is
+what `SMTP_USE_TLS` switches on; implicit TLS on 465 is a different connection
+and is not implemented.
+
+**Until a domain is verified, `onboarding@resend.dev` is the only sender
+allowed, and it only delivers to the address the Resend account was opened
+with.** That is enough to prove the wiring and to reset your own password; it
+is not enough for anybody else's. The moment there is a domain, verify it in
+Resend, add the three DNS records it asks for, and change one line:
+
+```
+EMAIL_FROM_ADDRESS=no-reply@yourdomain
+```
+
+The links inside the messages have to point at the same place, which is
+`FRONTEND_BASE_URL`.
+
+## The alternative: Gmail with an app password
+
+Free, 500 messages a day, no account with anybody new. It is a mailbox rather
+than a sending service, so there is no delivery log and no way to tell a
+message that bounced from one that was never sent.
 
 1. The Google account needs **2-Step Verification** on. Without it the app
    password page does not exist.
@@ -63,30 +101,18 @@ EMAIL_FROM_NAME=ProfPlan
 Gmail already knows about. Gmail rewrites a sender it does not recognise, and
 then the reply address is not the one the message claims.
 
-Port 587 with STARTTLS, not 465: the adapter speaks STARTTLS on a plain socket,
-which is what `SMTP_USE_TLS` switches on. Implicit TLS on 465 is a different
-connection and is not implemented.
+## Proving it, whichever it is
 
-Then prove it, before anybody needs it:
+Before anybody needs it:
 
 ```bash
-docker compose --profile dev exec api python scripts/send_test_email.py you@gmail.com
+docker compose --profile dev exec api python scripts/send_test_email.py you@example.com
 ```
 
-It prints the configuration it is about to use and either the message id or the
-exception. Almost every first failure is one of three things: the app password
-pasted with its spaces, a `From` that is not the authenticated account, or a
-network that blocks 587.
-
-## When it grows past a personal project
-
-Gmail is a mailbox, not a sending service. The move is to a provider that signs
-with DKIM for a domain you own, Brevo or Resend or SES, which is the same
-change: four environment variables. The application does not know the
-difference, which is the reason it was built against plain SMTP.
-
-The one thing that changes with a domain is that the reset links have to point
-at it too, `FRONTEND_BASE_URL`.
+It prints the configuration it is about to use and either success or the
+exception. Almost every first failure is one of three things: a credential
+pasted with the spaces the provider showed it with, a `From` the provider will
+not accept from this account, or a network that blocks 587.
 
 ## In production, the password is a secret
 
