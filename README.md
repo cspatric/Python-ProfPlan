@@ -364,7 +364,9 @@ tokens; closing it would mean a store lookup on every request.
 In development the stack ships **Mailpit** (`--profile dev`): mail is delivered
 and readable at <http://localhost:8025> instead of going anywhere real. With
 `EMAIL_ENABLED=false` the message body is written to the log instead, which is
-what CI uses.
+what CI uses. Pointing it at a real server is four environment variables and
+one command to prove it works, both in
+[`docs/deployment/EMAIL.md`](docs/deployment/EMAIL.md).
 
 ## CORS & single entrypoint
 

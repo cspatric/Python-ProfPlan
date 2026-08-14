@@ -84,6 +84,7 @@ resource "aws_ssm_parameter" "external" {
     "GEMINI_API_KEY",
     "GOOGLE_OAUTH_CLIENT_ID",
     "GOOGLE_OAUTH_CLIENT_SECRET",
+    "SMTP_PASSWORD",
   ])
 
   name  = "${local.secrets_path}/${each.value}"
