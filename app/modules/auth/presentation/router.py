@@ -59,10 +59,18 @@ def _set_auth_cookies(response: Response, tokens: IssuedTokens) -> None:
     )
     # Not HttpOnly on purpose: the frontend must read it and mirror it into
     # the X-CSRF-Token header (see app/api/csrf.py).
+    #
+    # It lives as long as the refresh cookie, not as long as the access one.
+    # The value carries no authority: it only has to be unreadable from
+    # another origin. Expiring it with the access token instead left the
+    # browser holding a refresh cookie and no CSRF cookie, which the
+    # middleware answers with 403 on every write, including the POST to
+    # /auth/refresh that would have fixed it. The session became unusable
+    # fifteen minutes in, with no way out but logging in again.
     response.set_cookie(
         key=CSRF_COOKIE_NAME,
         value=secrets.token_urlsafe(32),
-        max_age=_settings.access_token_expire_minutes * 60,
+        max_age=_settings.refresh_token_expire_days * 86400,
         httponly=False,
         secure=_settings.cookie_secure,
         samesite=_settings.cookie_samesite,

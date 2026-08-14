@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import text
 
 from app.api.csrf import CSRF_COOKIE_NAME
+from app.core.config import get_settings
 from app.infrastructure.database.session import SessionFactory
 
 pytestmark = pytest.mark.integration
@@ -158,6 +159,36 @@ async def test_login_account_lockout_persists_across_ips(client, user_factory):
 
     assert codes[:5] == [401, 401, 401, 401, 401]
     assert codes[5] == 429
+
+
+async def test_csrf_cookie_outlives_the_access_cookie(client, user_factory):
+    """The CSRF cookie must last as long as the session, not as long as the
+    access token.
+
+    When it expired with the access token, a browser that idled past the
+    access lifetime kept the refresh cookie and lost the CSRF one. Every write
+    then got a 403 from the CSRF middleware, and so did the POST to
+    /auth/refresh that would have renewed the session: the session was stuck
+    until the user logged in again.
+    """
+    settings = get_settings()
+    await user_factory(email="ttl@test.com")
+
+    resp = await client.post(
+        LOGIN, json={"email": "ttl@test.com", "password": "Senha@123"}
+    )
+
+    max_ages = {
+        cookie.split("=", 1)[0]: int(
+            next(p for p in cookie.split("; ") if p.startswith("Max-Age=")).split("=")[
+                1
+            ]
+        )
+        for cookie in resp.headers.get_list("set-cookie")
+    }
+
+    assert max_ages[CSRF_COOKIE_NAME] == settings.refresh_token_expire_days * 86400
+    assert max_ages[CSRF_COOKIE_NAME] > max_ages[settings.access_cookie_name]
 
 
 async def test_mutating_request_without_csrf_header_is_forbidden(client, user_factory):

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.core.security import hash_password
+from app.core.security import hash_password, password_needs_rehash
 from app.modules.auth.application.service import AuthService
 from app.modules.auth.domain.exceptions import (
     InvalidCredentialsError,
@@ -319,3 +319,24 @@ async def test_logout_all_revokes_every_session() -> None:
 
     assert revoked == 1
     assert AuthEvent.LOGOUT_ALL in logs.events
+
+
+class TestPasswordRehash:
+    """A hash made with weaker parameters is upgraded on the next login.
+
+    Raising the Argon2 cost in the settings only protects new accounts unless
+    something replaces the old hashes, and a login is the one moment the
+    plaintext password is available to make a new one.
+    """
+
+    def test_a_current_hash_needs_nothing(self) -> None:
+        assert not password_needs_rehash(hash_password("Senha@12345"))
+
+    def test_a_weaker_hash_is_flagged(self) -> None:
+        from argon2 import PasswordHasher
+
+        weak = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1).hash(
+            "Senha@12345"
+        )
+
+        assert password_needs_rehash(weak)
