@@ -6,6 +6,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
+from app.core.constants import EMBEDDING_DIMENSIONS
 from app.infrastructure.storage.minio import ObjectStorage
 from app.modules.documents.domain.entities import IngestionStatus
 from app.modules.documents.infrastructure.models import DocumentContent
@@ -15,7 +17,10 @@ from app.modules.documents.infrastructure.repository import (
 )
 from app.modules.rag.application.indexing_service import IndexingService
 from app.modules.rag.domain.chunk import ChunkInput
-from app.modules.rag.domain.exceptions import EmptyDocumentError
+from app.modules.rag.domain.exceptions import (
+    EmbeddingDimensionMismatchError,
+    EmptyDocumentError,
+)
 from app.modules.rag.domain.interfaces import Embedder
 from app.modules.rag.infrastructure.chunking.chunker import chunk_markdown
 from app.modules.rag.infrastructure.parser.document_parser import (
@@ -121,7 +126,9 @@ class IngestionService:
         await self._session.commit()
         await self._session.refresh(content)
 
-        pieces = chunk_markdown(markdown)
+        pieces = chunk_markdown(
+            markdown, max_chars=get_settings().embedding_chunk_chars
+        )
         if not pieces:
             # The file was accepted, stored and parsed, and produced nothing to
             # search. Calling that INDEXED is the worst outcome available: the
@@ -147,6 +154,16 @@ class IngestionService:
             await self._session.commit()
 
         embeddings = await self._embedder.embed_texts(pieces, on_progress=report)
+
+        # Checked here rather than trusted: a model swap in the settings is a
+        # one-line change that the column cannot follow.
+        if embeddings and len(embeddings[0]) != EMBEDDING_DIMENSIONS:
+            raise EmbeddingDimensionMismatchError(
+                expected=EMBEDDING_DIMENSIONS,
+                got=len(embeddings[0]),
+                model=get_settings().embedding_model,
+            )
+
         chunks = [
             ChunkInput(
                 chunk_index=index,

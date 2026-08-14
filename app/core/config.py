@@ -98,11 +98,28 @@ class Settings(BaseSettings):
 
     # Embeddings (Ollama)
     ollama_base_url: str = "http://ollama:11434"
+    # Measured on a CPU-only machine, per chunk of ~1200 characters:
+    #   bge-m3            1.5s   1024-d   multilingual
+    #   nomic-embed-text  0.9s    768-d   English-centric
+    #   all-minilm        0.06s   384-d   English-centric, much weaker
+    # bge-m3 is 24x slower than the fastest option and is kept anyway: the
+    # material here is Portuguese, and the two faster models are trained for
+    # English. A 2000-chunk book costs about 50 minutes to index once, against
+    # retrieval quality on every plan generated afterwards.
+    #
+    # Switching this is NOT a settings change on its own: the vector size is
+    # fixed by a migration (chunks.embedding) and every stored vector would
+    # have to be recomputed. The ingestion refuses a mismatch rather than
+    # discovering it on the insert.
     embedding_model: str = "bge-m3"
     # Chunks per embedding request. bge-m3 on a CPU costs about five seconds a
     # chunk and batching wins nothing, so this is sized so one request stays
     # far inside the timeout below, not to go faster.
     embedding_batch_size: int = 8
+    # Characters per chunk. Fewer, larger chunks means less embedding time and
+    # coarser retrieval; the trade is real in both directions, so it is a knob
+    # rather than a constant. Only affects documents ingested from now on.
+    embedding_chunk_chars: int = 1000
     # Per request, not per document. Eight chunks cost roughly forty seconds on
     # the slowest machine measured, so this leaves several times that in hand.
     embedding_timeout_seconds: float = 300.0

@@ -44,6 +44,11 @@ class FakeDocuments:
     async def get_for_processing(self, _document_id: UUID):
         return self.document
 
+    async def set_ingestion_progress(
+        self, _document_id: UUID, *, done: int, total: int
+    ) -> None:
+        self.progress = (done, total)
+
     async def set_ingestion_status(
         self, _document_id: UUID, status: IngestionStatus, error: str | None = None
     ) -> None:
@@ -160,3 +165,48 @@ async def test_a_file_with_no_readable_text_is_not_reported_as_indexed() -> None
     assert documents.document.ingestion_status is IngestionStatus.FAILED
     assert "no text layer" in documents.history[-1][1]
     assert "readable text" in str(raised.value)
+
+
+class WrongSizeEmbedder:
+    """A model whose vectors do not fit the column, i.e. a swapped model."""
+
+    async def embed_texts(self, texts, *, on_progress=None):
+        if on_progress is not None:
+            await on_progress(len(texts))
+        return [[0.0] * 768 for _ in texts]
+
+    async def embed_text(self, text):
+        return (await self.embed_texts([text]))[0]
+
+
+class TextStorage:
+    def get_object(self, _path: str) -> bytes:
+        return b"# Heading\n\nSomething long enough to make one chunk of text."
+
+
+class FakeIndexing:
+    async def index_content(self, **_kwargs) -> None:  # pragma: no cover
+        raise AssertionError("must not reach the insert with the wrong size")
+
+
+async def test_a_model_of_the_wrong_size_fails_before_the_insert() -> None:
+    """Switching EMBEDDING_MODEL is a schema change, not a setting change.
+
+    Left unchecked, the run pays for every chunk and then dies on the insert
+    with a SQL error naming neither the model nor the setting behind it.
+    """
+    documents = FakeDocuments(IngestionStatus.PENDING, datetime.now(UTC))
+    service = IngestionService(
+        FakeSession(),
+        storage=TextStorage(),
+        embedder=WrongSizeEmbedder(),
+        documents=documents,
+        contents=FakeContents(),
+        indexing=FakeIndexing(),
+    )
+
+    with pytest.raises(Exception) as raised:
+        await service.ingest(uuid4())
+
+    assert "768" in str(raised.value) and "1024" in str(raised.value)
+    assert documents.document.ingestion_status is IngestionStatus.FAILED
