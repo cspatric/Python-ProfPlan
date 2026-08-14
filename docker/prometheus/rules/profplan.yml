@@ -223,3 +223,36 @@ groups:
             The dead letter queue is not being drained. It is capped at 1000
             entries, so past that the oldest failures are lost for good.
           runbook: docs/observability/RUNBOOK-dead-letter.md
+
+  - name: llm_cost
+    rules:
+      # Not a threshold on the bill, which is a business decision nobody wrote
+      # down, but on the shape of it: a jump means either a burst of plans or
+      # a chain falling through to a model an order of magnitude dearer, and
+      # both are worth knowing about within the hour rather than at invoice.
+      - alert: LLMSpendJumped
+        expr: |
+          sum(rate(profplan_llm_cost_usd_total[15m])) * 3600
+            > 5 * (sum(rate(profplan_llm_cost_usd_total[6h] offset 15m)) * 3600 + 0.01)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI spend is five times its recent average"
+          description: >-
+            {{ $value | printf "%.2f" }} USD/hour against the last six hours.
+            Check which model is answering: the fallback chain changes the
+            price per token by more than the traffic usually does.
+
+      # Tokens counted with no price to apply. Every one of these makes the
+      # cost total quietly smaller than the invoice.
+      - alert: LLMModelHasNoPrice
+        expr: increase(profplan_llm_unpriced_calls_total[1h]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.model }} is being used and has no price"
+          description: >-
+            Its tokens are counted, its cost is not. Add it to
+            app/modules/ai/domain/pricing.py.

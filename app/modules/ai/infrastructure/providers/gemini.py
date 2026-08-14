@@ -4,6 +4,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.modules.ai.domain.exceptions import ProviderUnavailableError
+from app.modules.ai.domain.usage import Completion, TokenUsage
 from app.modules.ai.infrastructure.providers.base import HTTPLLMProvider
 
 _BASE = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -21,7 +22,7 @@ class GeminiProvider(HTTPLLMProvider):
         self._model = settings.gemini_model
         self._max_tokens = settings.llm_max_tokens
 
-    async def generate(self, prompt: str, *, system: str | None = None) -> str:
+    async def generate(self, prompt: str, *, system: str | None = None) -> Completion:
         if not self._api_key:
             raise ProviderUnavailableError("Gemini API key not configured")
 
@@ -52,4 +53,20 @@ class GeminiProvider(HTTPLLMProvider):
                 candidates[0].get("finishReason") if candidates else "NO_CANDIDATES"
             )
             raise ValueError(f"Gemini returned no text (finishReason={reason})")
-        return text
+
+        meta = data.get("usageMetadata") or {}
+        return Completion(
+            text=text,
+            model=self._model,
+            usage=TokenUsage(
+                input_tokens=meta.get("promptTokenCount", 0),
+                # Thinking tokens are billed as output and are reported apart,
+                # so leaving them out would under-report the bill.
+                output_tokens=(
+                    meta.get("candidatesTokenCount", 0)
+                    + meta.get("thoughtsTokenCount", 0)
+                ),
+            )
+            if meta
+            else None,
+        )

@@ -2,6 +2,7 @@
 
 from app.core.config import get_settings
 from app.modules.ai.domain.exceptions import ProviderUnavailableError
+from app.modules.ai.domain.usage import Completion, TokenUsage
 from app.modules.ai.infrastructure.providers.base import HTTPLLMProvider
 
 _ENDPOINT = "https://api.openai.com/v1/chat/completions"
@@ -19,7 +20,7 @@ class OpenAIProvider(HTTPLLMProvider):
         self._model = settings.openai_model
         self._max_tokens = settings.llm_max_tokens
 
-    async def generate(self, prompt: str, *, system: str | None = None) -> str:
+    async def generate(self, prompt: str, *, system: str | None = None) -> Completion:
         if not self._api_key:
             raise ProviderUnavailableError("OpenAI API key not configured")
         data = await self._post(
@@ -34,4 +35,14 @@ class OpenAIProvider(HTTPLLMProvider):
                 "max_tokens": self._max_tokens,
             },
         )
-        return data["choices"][0]["message"]["content"]
+        usage = data.get("usage") or {}
+        return Completion(
+            text=data["choices"][0]["message"]["content"],
+            model=data.get("model") or self._model,
+            usage=TokenUsage(
+                input_tokens=usage.get("prompt_tokens", 0),
+                output_tokens=usage.get("completion_tokens", 0),
+            )
+            if usage
+            else None,
+        )

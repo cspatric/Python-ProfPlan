@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.academic_items.infrastructure.models import AcademicItem
+from app.modules.ai.domain.usage import usage_scope
 from app.modules.ai.infrastructure.gateway.llm_gateway import LLMGateway
 from app.modules.ai.infrastructure.repository import AiProviderRepository
 from app.modules.documents.domain.exceptions import DocumentNotFoundError
@@ -222,20 +223,31 @@ class GenerationService:
             await self._plan_docs.content_ids_for_plan(plan_id, user_id) or None
         )
         brief = _brief(plan)
-        roadmap = await self.plan_roadmap(
-            user_id=user_id,
-            subject_id=plan.subject_id,
-            plan_info=brief.info,
-            teacher_input=teacher_input,
-            content_ids=content_ids,
-            classes=brief.classes,
-        )
-        return await self.materialize(
+        # Everything the planner spends, including a repair attempt and the
+        # judge, belongs to this run. The scope is opened here rather than
+        # inside the planner because the planner does not know which run it is
+        # drafting for, and should not have to.
+        with usage_scope() as ledger:
+            roadmap = await self.plan_roadmap(
+                user_id=user_id,
+                subject_id=plan.subject_id,
+                plan_info=brief.info,
+                teacher_input=teacher_input,
+                content_ids=content_ids,
+                classes=brief.classes,
+            )
+        # The run does not exist until materialise creates it, so the ledger
+        # waits for it. Nothing is lost in between: the scope has already
+        # closed and the totals are in hand.
+        run, items = await self.materialize(
             user_id=user_id,
             plan=plan,
             roadmap=roadmap,
             teacher_input=teacher_input or self.default_input(),
         )
+        await self._repo.add_usage(run.uuid, ledger)
+        await self._session.commit()
+        return run, items
 
     async def begin(
         self,
@@ -310,14 +322,20 @@ class GenerationService:
             },
             item_kinds=[ItemKind(kind) for kind in (asked.get("kinds") or [])],
         )
-        roadmap = await self.plan_roadmap(
-            user_id=user_id,
-            subject_id=plan.subject_id,
-            plan_info=brief.info,
-            teacher_input=teacher_input,
-            content_ids=content_ids,
-            classes=brief.classes,
-        )
+        # Everything the planner spends, including a repair attempt and the
+        # judge, belongs to this run. The scope is opened here rather than
+        # inside the planner because the planner does not know which run it is
+        # drafting for, and should not have to.
+        with usage_scope() as ledger:
+            roadmap = await self.plan_roadmap(
+                user_id=user_id,
+                subject_id=plan.subject_id,
+                plan_info=brief.info,
+                teacher_input=teacher_input,
+                content_ids=content_ids,
+                classes=brief.classes,
+            )
+        await self._repo.add_usage(run.uuid, ledger)
         _, items = await self.materialize(
             user_id=user_id,
             plan=plan,
@@ -453,12 +471,15 @@ class GenerationService:
             plan_info=plan_info,
         )
         disabled = await self._providers.disabled_names()
-        result = await self._gateway.generate(
-            prompt, system=GENERATOR_SYSTEM, disabled=disabled
-        )
+        with usage_scope() as ledger:
+            result = await self._gateway.generate(
+                prompt, system=GENERATOR_SYSTEM, disabled=disabled
+            )
 
         item.content = {"markdown": result.text, "provider": result.provider}
         item.generation_status = GenerationItemStatus.COMPLETED
+        if item.generation_id is not None:
+            await self._repo.add_usage(item.generation_id, ledger)
         await self._session.commit()
         await self._recompute_run(item.generation_id)
 

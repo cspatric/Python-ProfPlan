@@ -91,6 +91,10 @@ probe every 15s (Prometheus scrapes `/metrics`, never `/ready`);
 `profplan_celery_queue_depth`; and `profplan_llm_requests_total` by provider and
 outcome, plus `profplan_llm_all_providers_failed_total`.
 
+The **worker** is scraped too, on `:9200`, and that is not a detail: every LLM
+call the product makes happens in a Celery task, so the token, cost and latency
+metrics are recorded there and nowhere else.
+
 ### Alerting (Prometheus rules + Alertmanager)
 
 Metrics nobody looks at are not monitoring. Twelve rules live in
@@ -367,6 +371,16 @@ and readable at <http://localhost:8025> instead of going anywhere real. With
 what CI uses. Pointing it at a real server is four environment variables and
 one command to prove it works, both in
 [`docs/deployment/EMAIL.md`](docs/deployment/EMAIL.md).
+
+## What the AI costs
+
+Every completion is counted by provider **and model**: tokens, list-price cost
+and latency, plus a counter for models with no price in the table, because the
+fallback chain picks the model at runtime and the price per token differs by
+fifty times across the chain. Per run the totals live on `plan_generation` and
+come back on the generation response; per call there is a line in Loki. The
+whole of it, including what a real plan measured, is in
+[`docs/observability/LLM-COST.md`](docs/observability/LLM-COST.md).
 
 ## CORS & single entrypoint
 

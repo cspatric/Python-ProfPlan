@@ -1,9 +1,19 @@
 """Celery worker bootstrap."""
 
+import logging
 import os
 
 from celery import Celery
-from celery.signals import worker_process_init
+from celery.signals import (
+    setup_logging as celery_setup_logging,
+)
+from celery.signals import (
+    worker_process_init,
+    worker_process_shutdown,
+    worker_ready,
+)
+
+logger = logging.getLogger("app.worker")
 
 celery_app = Celery(
     "profplan",
@@ -25,11 +35,89 @@ celery_app.conf.update(
 )
 
 
+#: Where the worker answers a Prometheus scrape. A port rather than a file,
+#: because Prometheus pulls: pushing from a worker would need a gateway, and a
+#: pushgateway keeps reporting the last value of a worker that has died.
+METRICS_PORT = int(os.getenv("WORKER_METRICS_PORT", "9200"))
+
+
+@celery_setup_logging.connect
+def _use_the_application_log_format(**_: object) -> None:
+    """Stop Celery from replacing the JSON logging with its own format.
+
+    Connecting to this signal at all is what disables Celery's configuration;
+    what is done inside it is then the whole of it. Without this the worker
+    printed lines like "INFO/ForkPoolWorker-6 llm call" and every structured
+    field went nowhere, which is a problem here specifically: every LLM call
+    the product makes happens in a task, so the per-call cost line was the one
+    line that never reached Loki.
+    """
+    from app.core.config import get_settings
+    from app.infrastructure.telemetry.logging import setup_logging
+
+    setup_logging(get_settings().log_level)
+
+
+@worker_ready.connect
+def _serve_metrics(**_: object) -> None:
+    """Expose the worker's metrics, merged across its child processes.
+
+    This matters more than it looks: every LLM call the product actually makes
+    happens *here*, in a task, not in the API. Before this, the cost and token
+    metrics existed and nothing scraped them, which is the same as not having
+    them.
+
+    Runs in the main process, once. Celery forks its pool, so each child keeps
+    its own registry; prometheus_client's multiprocess mode has them write into
+    a shared directory that this endpoint merges at scrape time. Without
+    PROMETHEUS_MULTIPROC_DIR the endpoint would report whichever child happened
+    to answer, so it refuses to lie and serves nothing instead.
+    """
+    if not os.getenv("PROMETHEUS_MULTIPROC_DIR"):
+        logger.warning(
+            "worker metrics are off: PROMETHEUS_MULTIPROC_DIR is not set, so "
+            "per-process counters cannot be merged"
+        )
+        return
+
+    from prometheus_client import CollectorRegistry, multiprocess, start_http_server
+
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
+    start_http_server(METRICS_PORT, registry=registry)
+    logger.info("worker metrics on :%d", METRICS_PORT)
+
+
+@worker_process_shutdown.connect
+def _forget_dead_process(pid: int | None = None, **_: object) -> None:
+    """Drop a finished child's gauge files.
+
+    Counters survive on purpose, they are the totals. Gauges do not: a value
+    from a process that no longer exists is a number that will never change
+    again and is not true either.
+    """
+    if not os.getenv("PROMETHEUS_MULTIPROC_DIR") or pid is None:
+        return
+    from prometheus_client import multiprocess
+
+    multiprocess.mark_process_dead(pid)
+
+
 @worker_process_init.connect
-def _setup_worker_tracing(**_: object) -> None:
-    """Enable tracing inside each worker process (opt-in via OTEL_ENABLED)."""
+def _setup_worker_process(**_: object) -> None:
+    """Prepare a freshly forked pool process: tracing, and its own logging.
+
+    The logging has to be set up again *here*, not only in the main process.
+    The JSON handler writes through a QueueListener, which is a thread, and
+    threads do not survive a fork: the child inherited the queue and no reader,
+    so every line a task logged went into it and stayed there. The tasks are
+    the entire product, so that was all of them.
+    """
+    from app.core.config import get_settings
+    from app.infrastructure.telemetry.logging import setup_logging
     from app.infrastructure.telemetry.traces import setup_tracing
 
+    setup_logging(get_settings().log_level)
     setup_tracing("profplan-worker")
 
 

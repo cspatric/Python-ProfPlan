@@ -1,11 +1,13 @@
 """Persistence access for plan-generation runs and their items."""
 
+from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.academic_items.infrastructure.models import AcademicItem
+from app.modules.ai.domain.usage import UsageLedger
 from app.modules.generation.domain.entities import (
     GenerationItemStatus,
     GenerationRunStatus,
@@ -40,6 +42,37 @@ class GenerationRepository:
             select(PlanGeneration).where(PlanGeneration.uuid == generation_id)
         )
         return result.scalar_one_or_none()
+
+    async def add_usage(self, generation_id: UUID, ledger: UsageLedger) -> None:
+        """Add one scope's LLM usage to a run's running total.
+
+        The addition happens in the database, not in Python. A dozen item
+        workers finish at the same time, and read-modify-write in the
+        application would quietly drop most of their numbers, which is the
+        worst possible failure for a cost report: it under-reports, and
+        under-reporting looks like good news.
+
+        Money is passed as Decimal rather than float, so the value that reaches
+        a Numeric column is the one that was computed.
+        """
+        if ledger.calls == 0:
+            return
+        await self._session.execute(
+            update(PlanGeneration)
+            .where(PlanGeneration.uuid == generation_id)
+            .values(
+                llm_calls=PlanGeneration.llm_calls + ledger.calls,
+                llm_input_tokens=(
+                    PlanGeneration.llm_input_tokens + ledger.input_tokens
+                ),
+                llm_output_tokens=(
+                    PlanGeneration.llm_output_tokens + ledger.output_tokens
+                ),
+                llm_cost_usd=(
+                    PlanGeneration.llm_cost_usd + Decimal(str(ledger.cost_usd))
+                ),
+            )
+        )
 
     # --- items (academic_items owned by a run) ------------------------------
     async def list_items(self, generation_id: UUID) -> list[AcademicItem]:

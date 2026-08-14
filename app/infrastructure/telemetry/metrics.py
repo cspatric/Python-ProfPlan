@@ -85,6 +85,47 @@ PLAN_DRAFTS = Counter(
     ["outcome"],
 )
 
+# --------------------------------------------------------------------------- #
+# What the AI costs.
+#
+# The question these exist to answer is "what did that plan cost", and the
+# expensive part of the answer is *which model* answered: the same prompt is
+# half a cent on the local model and thirty on Opus, and the fallback chain
+# means the application does not choose. Provider alone cannot say that, so
+# everything here carries the model as well.
+# --------------------------------------------------------------------------- #
+LLM_TOKENS = Counter(
+    "profplan_llm_tokens_total",
+    "Tokens reported by the provider, by provider, model and direction.",
+    ["provider", "model", "direction"],
+)
+
+LLM_COST_USD = Counter(
+    "profplan_llm_cost_usd_total",
+    "Cost in USD at list price, by provider and model.",
+    ["provider", "model"],
+)
+
+# Separate from the request latency histogram: an LLM call is seconds to
+# minutes, so the default web buckets would put every call in +Inf and answer
+# nothing. These buckets are placed where the interesting differences are, a
+# fast local answer, a normal one, and the ones that are about to time out.
+LLM_LATENCY_SECONDS = Histogram(
+    "profplan_llm_latency_seconds",
+    "Time to a successful completion, by provider and model.",
+    ["provider", "model"],
+    buckets=(0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300),
+)
+
+# Tokens counted with no price to apply to them. Zero is the healthy value;
+# anything else means somebody configured a model that nobody priced, and the
+# cost total silently stopped being the whole bill.
+LLM_UNPRICED = Counter(
+    "profplan_llm_unpriced_calls_total",
+    "Completions whose model has no price in the table.",
+    ["provider", "model"],
+)
+
 LLM_ALL_PROVIDERS_FAILED = Counter(
     "profplan_llm_all_providers_failed_total",
     "Generations where every provider in the fallback chain failed.",

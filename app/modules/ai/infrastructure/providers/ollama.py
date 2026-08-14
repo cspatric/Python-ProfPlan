@@ -1,6 +1,7 @@
 """Local Ollama chat provider (final fallback, no API key required)."""
 
 from app.core.config import get_settings
+from app.modules.ai.domain.usage import Completion, TokenUsage
 from app.modules.ai.infrastructure.providers.base import HTTPLLMProvider
 
 
@@ -16,7 +17,7 @@ class OllamaProvider(HTTPLLMProvider):
         self._model = settings.ollama_chat_model
         self._max_tokens = settings.llm_max_tokens
 
-    async def generate(self, prompt: str, *, system: str | None = None) -> str:
+    async def generate(self, prompt: str, *, system: str | None = None) -> Completion:
         data = await self._post(
             f"{self._base_url}/api/chat",
             headers={"content-type": "application/json"},
@@ -29,4 +30,14 @@ class OllamaProvider(HTTPLLMProvider):
                 "options": {"num_predict": self._max_tokens, "temperature": 0.2},
             },
         )
-        return data["message"]["content"]
+        # Ollama reports the counts under different names, and reports them
+        # even though the model is free: they are the only way to see that the
+        # local fallback is doing the work the paid providers were not.
+        return Completion(
+            text=data["message"]["content"],
+            model=data.get("model") or self._model,
+            usage=TokenUsage(
+                input_tokens=data.get("prompt_eval_count", 0),
+                output_tokens=data.get("eval_count", 0),
+            ),
+        )

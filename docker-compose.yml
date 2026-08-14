@@ -239,6 +239,19 @@ services:
       ["celery", "-A", "app.infrastructure.celery.worker:celery_app",
        "worker", "--loglevel=info"]
     env_file: .env
+    environment:
+      # Every LLM call the product makes happens in a task, so this is where
+      # the token and cost metrics are recorded. Celery forks its pool, so the
+      # children write here and the main process merges the files at scrape
+      # time (see worker.py). Without it the worker serves no metrics at all
+      # rather than the numbers of one child picked at random.
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
+    volumes:
+      - type: tmpfs
+        target: /tmp/prometheus
+        tmpfs:
+          size: 33554432
+          mode: 0777
     depends_on:
       api:
         condition: service_started

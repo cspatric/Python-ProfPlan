@@ -21,6 +21,14 @@ scrape_configs:
     static_configs:
       - targets: ["api:8000"]
 
+  # The worker, which is where the AI actually runs: the planner and every
+  # activity are tasks, so the token, cost and latency metrics are recorded
+  # here and nowhere else. Same profiles as the api target.
+  - job_name: worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["worker:9200"]
+
   # Celery task events (succeeded, failed, retried) come from Flower, which
   # exposes them in Prometheus format. Flower runs under the dev/production
   # profiles, so this target is down when only the observability profile is

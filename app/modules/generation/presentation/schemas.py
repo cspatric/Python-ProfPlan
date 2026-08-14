@@ -36,6 +36,22 @@ class GeneratedItemResponse(BaseModel):
     error: str | None
 
 
+class GenerationUsageResponse(BaseModel):
+    """What this run spent on the AI.
+
+    Exposed rather than left in the database: "what did this plan cost" is a
+    question about one run, and answering it should not require SQL access.
+    The teacher does not have to be shown it; whoever pays for it does.
+    """
+
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    #: List price in USD. Six decimals, because a cheap call rounds to zero at
+    #: four and a report of zeroes teaches nothing.
+    cost_usd: float
+
+
 class GenerationResponse(BaseModel):
     """A generation run with its items (used for polling)."""
 
@@ -45,6 +61,7 @@ class GenerationResponse(BaseModel):
     summary: str | None
     item_count: int
     items: list[GeneratedItemResponse]
+    usage: GenerationUsageResponse
 
 
 def _item_response(item: AcademicItem) -> GeneratedItemResponse:
@@ -73,4 +90,10 @@ def build_generation_response(
         summary=summary,
         item_count=len(items),
         items=[_item_response(i) for i in items],
+        usage=GenerationUsageResponse(
+            calls=run.llm_calls,
+            input_tokens=run.llm_input_tokens,
+            output_tokens=run.llm_output_tokens,
+            cost_usd=float(run.llm_cost_usd),
+        ),
     )

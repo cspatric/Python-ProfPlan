@@ -8,6 +8,7 @@ fail, ``AllProvidersFailedError`` is raised.
 
 import asyncio
 import logging
+import time
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from functools import lru_cache
@@ -16,10 +17,16 @@ from app.core.config import get_settings
 from app.infrastructure.redis.client import redis_client
 from app.infrastructure.telemetry.metrics import (
     LLM_ALL_PROVIDERS_FAILED,
+    LLM_COST_USD,
+    LLM_LATENCY_SECONDS,
     LLM_REQUESTS,
+    LLM_TOKENS,
+    LLM_UNPRICED,
 )
 from app.modules.ai.domain.exceptions import AllProvidersFailedError
 from app.modules.ai.domain.interfaces import LLMProvider
+from app.modules.ai.domain.pricing import cost_usd
+from app.modules.ai.domain.usage import TokenUsage, record
 from app.modules.ai.infrastructure.gateway.circuit_breaker import CircuitBreaker
 from app.modules.ai.infrastructure.providers.claude import ClaudeProvider
 from app.modules.ai.infrastructure.providers.gemini import GeminiProvider
@@ -31,10 +38,16 @@ logger = logging.getLogger("app.ai")
 
 @dataclass(slots=True)
 class LLMResult:
-    """A successful generation and which provider produced it."""
+    """A successful generation, what produced it and what it cost."""
 
     provider: str
     text: str
+    model: str = ""
+    usage: TokenUsage | None = None
+    #: None when the model has no price in the table, which is not the same as
+    #: zero. See app/modules/ai/domain/pricing.py.
+    cost_usd: float | None = None
+    latency_seconds: float = 0.0
 
 
 class LLMGateway:
@@ -76,20 +89,68 @@ class LLMGateway:
                     errors[provider.name] = "circuit_open"
                     LLM_REQUESTS.labels(provider.name, "circuit_open").inc()
                     continue
+                started = time.perf_counter()
                 try:
-                    text = await provider.generate(prompt, system=system)
+                    completion = await provider.generate(prompt, system=system)
                 except Exception as exc:  # noqa: BLE001 — any failure → next provider
                     await breaker.record_failure()
                     errors[provider.name] = type(exc).__name__
                     LLM_REQUESTS.labels(provider.name, "failed").inc()
                     logger.warning("LLM provider %s failed: %s", provider.name, exc)
                     continue
+                elapsed = time.perf_counter() - started
                 await breaker.record_success()
                 LLM_REQUESTS.labels(provider.name, "success").inc()
-                return LLMResult(provider=provider.name, text=text)
+                return self._accounted(provider.name, completion, elapsed)
 
             LLM_ALL_PROVIDERS_FAILED.inc()
             raise AllProvidersFailedError(errors)
+
+    @staticmethod
+    def _accounted(provider: str, completion, elapsed: float) -> "LLMResult":
+        """Count what this call used, then hand it back.
+
+        Metrics and the ledger are both fed here, in the one place every
+        successful call passes through. Doing it at the call sites instead
+        would mean five of them, and the sixth one written next year.
+        """
+        model = completion.model or "unknown"
+        usage = completion.usage
+        price = cost_usd(model, usage)
+
+        LLM_LATENCY_SECONDS.labels(provider, model).observe(elapsed)
+        if usage is not None:
+            LLM_TOKENS.labels(provider, model, "input").inc(usage.input_tokens)
+            LLM_TOKENS.labels(provider, model, "output").inc(usage.output_tokens)
+        if price is None:
+            LLM_UNPRICED.labels(provider, model).inc()
+        else:
+            LLM_COST_USD.labels(provider, model).inc(price)
+
+        record(model=model, usage=usage, cost_usd=price or 0.0)
+
+        # One line per call, which is what makes "why did this plan cost that"
+        # answerable in Loki after the fact. The prompt is deliberately absent:
+        # it holds the teacher's material.
+        logger.info(
+            "llm call",
+            extra={
+                "llm_provider": provider,
+                "llm_model": model,
+                "llm_input_tokens": usage.input_tokens if usage else None,
+                "llm_output_tokens": usage.output_tokens if usage else None,
+                "llm_cost_usd": price,
+                "llm_latency_seconds": round(elapsed, 3),
+            },
+        )
+        return LLMResult(
+            provider=provider,
+            text=completion.text,
+            model=model,
+            usage=usage,
+            cost_usd=price,
+            latency_seconds=elapsed,
+        )
 
     async def provider_states(self) -> list[tuple[str, bool]]:
         """Return (provider name, circuit_open) in fallback order (for /health)."""
