@@ -52,6 +52,11 @@ class Document(Base):
         index=True,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The name of the file as it was uploaded. The stored path is a uuid, so
+    # without this the only thing identifying a document is a title that
+    # defaults to the file name, and a file named 085759e4f9.pdf leaves nothing
+    # to recognise it by.
+    original_filename: Mapped[str | None] = mapped_column(String(255))
     document_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     # RAG ingestion lifecycle (async, driven by the Celery worker).
     ingestion_status: Mapped[IngestionStatus] = mapped_column(

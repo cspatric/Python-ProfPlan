@@ -118,3 +118,45 @@ async def test_a_failed_document_is_retried() -> None:
         await service.ingest(uuid4())
 
     assert documents.history[0][0] is IngestionStatus.PROCESSING
+
+
+class EmptyStorage:
+    """A file that parses to nothing, the scanned-PDF case."""
+
+    def get_object(self, _path: str) -> bytes:
+        return b""
+
+
+class FakeContents:
+    """Just enough of the content repository to reach the chunking step."""
+
+    def add(self, _content) -> None:
+        pass
+
+    async def get_latest(self, _document_id: UUID):
+        return None
+
+
+async def test_a_file_with_no_readable_text_is_not_reported_as_indexed() -> None:
+    """The worst outcome available is silence.
+
+    The file was accepted, stored and parsed, and produced nothing to search.
+    Marking it INDEXED tells the teacher it is feeding the AI when it is
+    feeding it nothing, and there is no way to find that out from the app.
+    """
+    documents = FakeDocuments(IngestionStatus.PENDING, datetime.now(UTC))
+    service = IngestionService(
+        FakeSession(),
+        storage=EmptyStorage(),
+        embedder=object(),
+        documents=documents,
+        contents=FakeContents(),
+        indexing=object(),
+    )
+
+    with pytest.raises(Exception) as raised:
+        await service.ingest(uuid4())
+
+    assert documents.document.ingestion_status is IngestionStatus.FAILED
+    assert "no text layer" in documents.history[-1][1]
+    assert "readable text" in str(raised.value)

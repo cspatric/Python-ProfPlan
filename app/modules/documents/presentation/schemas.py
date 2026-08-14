@@ -20,8 +20,12 @@ class DocumentResponse(BaseModel):
     subject_id: UUID
     document_format_id: UUID | None
     title: str
+    original_filename: str | None = None
     document_path: str
     ingestion_status: IngestionStatus
+    # Why an ingestion failed, in the words the domain used. The list is the
+    # only place a failure is seen, so the reason has to travel with it.
+    ingestion_error: str | None = None
     # How far the embedding has got, and since when, so the page can say "42 of
     # 154, about six minutes left" instead of spinning indefinitely on a job
     # that runs for minutes. Null until the text has been chunked, which is the

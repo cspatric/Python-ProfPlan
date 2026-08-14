@@ -59,6 +59,7 @@ class UploadService:
             user_id=user_id,
             subject_id=subject_id,
             title=title,
+            original_filename=Path(filename).name,
             document_path=object_name,
             document_format_id=fmt.uuid,
         )

@@ -15,6 +15,7 @@ from app.modules.documents.infrastructure.repository import (
 )
 from app.modules.rag.application.indexing_service import IndexingService
 from app.modules.rag.domain.chunk import ChunkInput
+from app.modules.rag.domain.exceptions import EmptyDocumentError
 from app.modules.rag.domain.interfaces import Embedder
 from app.modules.rag.infrastructure.chunking.chunker import chunk_markdown
 from app.modules.rag.infrastructure.parser.document_parser import (
@@ -121,38 +122,45 @@ class IngestionService:
         await self._session.refresh(content)
 
         pieces = chunk_markdown(markdown)
-        if pieces:
-            # The total is only knowable here, after parsing and chunking.
-            # Publishing it now, and the count as each batch lands, is what
-            # lets the page show progress and an estimate instead of an
-            # indefinite spinner on a job that runs for minutes.
+        if not pieces:
+            # The file was accepted, stored and parsed, and produced nothing to
+            # search. Calling that INDEXED is the worst outcome available: the
+            # page reports success and the document silently contributes
+            # nothing to any plan generated from it. A scanned PDF with no text
+            # layer is the usual cause, and the teacher can only act on it if
+            # they are told.
+            raise EmptyDocumentError
+
+        # The total is only knowable here, after parsing and chunking.
+        # Publishing it now, and the count as each batch lands, is what
+        # lets the page show progress and an estimate instead of an
+        # indefinite spinner on a job that runs for minutes.
+        await self._documents.set_ingestion_progress(
+            document_id, done=0, total=len(pieces)
+        )
+        await self._session.commit()
+
+        async def report(done: int) -> None:
             await self._documents.set_ingestion_progress(
-                document_id, done=0, total=len(pieces)
+                document_id, done=done, total=len(pieces)
             )
             await self._session.commit()
 
-            async def report(done: int) -> None:
-                await self._documents.set_ingestion_progress(
-                    document_id, done=done, total=len(pieces)
-                )
-                await self._session.commit()
+        embeddings = await self._embedder.embed_texts(pieces, on_progress=report)
+        chunks = [
+            ChunkInput(
+                chunk_index=index,
+                content=piece,
+                token_count=len(piece.split()),
+                embedding=embedding,
+            )
+            for index, (piece, embedding) in enumerate(
+                zip(pieces, embeddings, strict=True)
+            )
+        ]
+        await self._indexing.index_content(content_id=content.uuid, chunks=chunks)
 
-            embeddings = await self._embedder.embed_texts(pieces, on_progress=report)
-            chunks = [
-                ChunkInput(
-                    chunk_index=index,
-                    content=piece,
-                    token_count=len(piece.split()),
-                    embedding=embedding,
-                )
-                for index, (piece, embedding) in enumerate(
-                    zip(pieces, embeddings, strict=True)
-                )
-            ]
-            await self._indexing.index_content(content_id=content.uuid, chunks=chunks)
-
-        # Chunks are now in pgvector (or the document was legitimately empty):
-        # only now is the document truly searchable.
+        # Chunks are in pgvector: only now is the document truly searchable.
         await self._documents.set_ingestion_status(document_id, IngestionStatus.INDEXED)
         await self._session.commit()
         return content

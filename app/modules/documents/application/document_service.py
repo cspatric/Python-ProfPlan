@@ -44,6 +44,7 @@ class DocumentService:
         subject_id: UUID,
         title: str,
         document_path: str,
+        original_filename: str | None = None,
         document_format_id: UUID | None = None,
     ) -> Document:
         """Register an uploaded document for a subject owned by the user."""
@@ -51,6 +52,7 @@ class DocumentService:
         document = Document(
             subject_id=subject_id,
             title=title,
+            original_filename=original_filename,
             document_path=document_path,
             document_format_id=document_format_id,
         )
