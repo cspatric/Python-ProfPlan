@@ -17,13 +17,16 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.security import hash_password, hash_token
+from app.core.security import hash_password, hash_token, verify_password
 from app.modules.auth.domain.emails import (
     RenderedEmail,
     email_verification_email,
     password_reset_email,
 )
-from app.modules.auth.domain.exceptions import InvalidVerificationTokenError
+from app.modules.auth.domain.exceptions import (
+    InvalidCredentialsError,
+    InvalidVerificationTokenError,
+)
 from app.modules.auth.infrastructure.models import AuthEvent, VerificationPurpose
 from app.modules.auth.infrastructure.repository import (
     AuthLogRepository,
@@ -141,6 +144,62 @@ class AccountService:
             "password reset completed",
             extra={"user_id": str(user.uuid), "sessions_revoked": revoked},
         )
+
+    async def set_password(
+        self,
+        *,
+        user: User,
+        new_password: str,
+        current_password: str | None,
+        ip_address: str | None,
+        user_agent: str | None,
+    ) -> bool:
+        """Set the password of the signed-in account. Returns whether sessions ended.
+
+        Two cases, and they end differently on purpose.
+
+        An account that arrived through Google has no password. There is
+        nothing to prove and nothing to undo, so the first password is set and
+        the session it was set from stays alive.
+
+        An account that already has one is changing it, which is what somebody
+        does when they think another person has it. The current password is
+        required, and every session ends, including this one, exactly like a
+        reset. Keeping this one alive would mean trusting the session that may
+        be the problem.
+        """
+        changing = user.password_hash is not None
+        if changing and not (
+            current_password and verify_password(current_password, user.password_hash)
+        ):
+            raise InvalidCredentialsError
+
+        user.password_hash = hash_password(new_password)
+        revoked = 0
+        if changing:
+            revoked = await self._refresh_tokens.revoke_all_for_user(user.uuid)
+
+        # The same event as a completed reset: from the account's point of
+        # view this is the password changing, and an audit trail that
+        # distinguishes the two would need a new value in the database enum
+        # to say something the ip and user agent already say.
+        await self._auth_logs.record(
+            event=AuthEvent.PASSWORD_RESET_COMPLETED,
+            user_id=user.uuid,
+            email=user.email,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        await self._session.commit()
+        logger.info(
+            "password set from the session",
+            extra={
+                "user_id": str(user.uuid),
+                "was_a_change": changing,
+                "sessions_revoked": revoked,
+            },
+        )
+        return changing
 
     # --------------------------------------------------------- verification
     async def send_email_verification(

@@ -7,6 +7,7 @@ tested here with real rows rather than a stand-in for the session.
 """
 
 import importlib
+from contextlib import asynccontextmanager
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -153,12 +154,14 @@ async def test_a_passwordless_account_cannot_be_signed_into_with_a_password(clie
 # --------------------------------------------------------------------------- #
 
 
-@pytest_asyncio.fixture
-async def google_client(monkeypatch):
-    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "this-app")
-    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "not-a-real-secret")
-    get_settings.cache_clear()
+@asynccontextmanager
+async def _client_for_a_rebuilt_router():
+    """Mount the auth router as it is under the environment set by the caller.
 
+    The routes are registered at import time, so the module has to be reloaded
+    after the environment changes. The reload is undone afterwards, or the rest
+    of the suite would inherit whichever configuration ran last.
+    """
     from app.api.rate_limit import limiter
     from app.modules.auth.presentation import router as router_module
 
@@ -169,21 +172,46 @@ async def google_client(monkeypatch):
     app.include_router(router_module.router, prefix="/api/v1")
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport, base_url="http://testserver", follow_redirects=False
-    ) as http_client:
+    try:
+        async with AsyncClient(
+            transport=transport, base_url="http://testserver", follow_redirects=False
+        ) as http_client:
+            yield http_client
+    finally:
+        get_settings.cache_clear()
+        importlib.reload(router_module)
+
+
+@pytest_asyncio.fixture
+async def google_client(monkeypatch):
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "this-app")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "not-a-real-secret")
+    get_settings.cache_clear()
+    async with _client_for_a_rebuilt_router() as http_client:
         yield http_client
 
-    # Put the imported module back the way the rest of the suite expects it.
+
+@pytest_asyncio.fixture
+async def plain_client(monkeypatch):
+    """The same app with the feature off, whatever the developer's .env says.
+
+    Asserting the absence of a route against the shared app made this test
+    depend on a file that is not in the repository: it passed until somebody
+    configured Google locally, and then failed for a reason that had nothing
+    to do with the change in front of them.
+    """
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
     get_settings.cache_clear()
-    importlib.reload(router_module)
+    async with _client_for_a_rebuilt_router() as http_client:
+        yield http_client
 
 
-async def test_the_endpoints_do_not_exist_without_a_client_id(client):
+async def test_the_endpoints_do_not_exist_without_a_client_id(plain_client):
     """A button that cannot work is worse than one that is honestly absent."""
-    assert (await client.get("/api/v1/auth/oauth/google")).status_code == 404
+    assert (await plain_client.get("/api/v1/auth/oauth/google")).status_code == 404
     # And the sign-in page is told, so it does not draw the button either.
-    listing = await client.get("/api/v1/auth/providers")
+    listing = await plain_client.get("/api/v1/auth/providers")
     assert listing.json() == {"google": False}
 
 

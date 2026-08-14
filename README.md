@@ -227,6 +227,7 @@ configured, sign in with Google. Endpoints under `/api/v1/auth`:
 | POST | `/auth/email-verification` | Resend the verification link (authenticated) |
 | POST | `/auth/email-verification/confirm` | Spend the token, mark the address verified |
 | GET | `/auth/me` | Return the authenticated user |
+| POST | `/auth/password` | Set the first password, or change the current one |
 | GET | `/auth/providers` | Which external sign-in options exist here |
 | GET | `/auth/oauth/google` | Start the Google flow (only when configured) |
 | GET | `/auth/oauth/google/callback` | Finish it and set the cookies |
@@ -244,6 +245,11 @@ Security properties:
 - Session revocation (single device or all).
 - **Rate limiting** on login via Redis.
 - Authentication **audit log** (`auth_logs`).
+- **Accounts with no password.** An account created through Google has
+  `password_hash NULL`, so `/auth/me` reports `has_password: false` and the app
+  offers to set one. Setting the first password needs no current password and
+  keeps the session; changing an existing one requires it and ends every
+  session, like a reset.
 - **Sign in with Google** (authorization code flow, server side exchange,
   single-use `state`), off unless credentials are set, and refusing to link an
   unverified address to an account that already exists. The whole of it,

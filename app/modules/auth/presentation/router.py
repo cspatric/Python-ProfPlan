@@ -28,8 +28,10 @@ from app.modules.auth.presentation.schemas import (
     MessageResponse,
     PasswordResetConfirm,
     PasswordResetRequest,
+    PasswordSetResponse,
     ProvidersResponse,
     RegisterRequest,
+    SetPasswordRequest,
     UserResponse,
 )
 from app.shared.exceptions.base import AppError
@@ -272,6 +274,38 @@ async def confirm_password_reset(
         user_agent=request.headers.get("user-agent"),
     )
     return MessageResponse(detail="Password updated. Sign in again.")
+
+
+@router.post("/password", response_model=PasswordSetResponse)
+@auth_limit
+async def set_password(
+    payload: SetPasswordRequest,
+    request: Request,
+    response: Response,
+    user: CurrentUser,
+    service: AccountServiceDep,
+) -> PasswordSetResponse:
+    """Set or change the password of the signed-in account.
+
+    The first password of an account that came from Google needs no current
+    password, and keeps the session. Changing an existing one requires it and
+    ends every session, this one included.
+    """
+    changed = await service.set_password(
+        user=user,
+        new_password=payload.password,
+        current_password=payload.current_password,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    if changed:
+        _clear_auth_cookies(response)
+        return PasswordSetResponse(
+            detail="Password updated. Sign in again.", sessions_ended=True
+        )
+    return PasswordSetResponse(
+        detail="Password set. You can now sign in with it.", sessions_ended=False
+    )
 
 
 @router.post(
