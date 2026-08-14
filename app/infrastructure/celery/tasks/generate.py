@@ -13,6 +13,7 @@ from uuid import UUID
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.infrastructure.celery import dead_letter
 from app.infrastructure.celery.worker import celery_app
 from app.infrastructure.database.session import WorkerSessionFactory
 from app.infrastructure.redis.client import new_redis_client
@@ -85,6 +86,12 @@ def run_item(self, item_id: str) -> None:
     except Exception as exc:
         if self.request.retries >= self.max_retries:
             asyncio.run(_fail(item_uuid, str(exc)))
+            dead_letter.record(
+                task=self.name,
+                args=(item_id,),
+                error=str(exc),
+                retries=self.request.retries,
+            )
             raise
         # Exponential backoff: 15s, 30s, 60s.
         raise self.retry(exc=exc, countdown=15 * 2**self.request.retries) from exc
@@ -140,6 +147,12 @@ def generate_plan(
             # whose roadmap never arrived has to say so rather than spin.
             asyncio.run(_fail_run(run_uuid, str(exc)))
             PLAN_DRAFTS.labels(outcome="failed").inc()
+            dead_letter.record(
+                task=self.name,
+                args=(plan_id, user_id, run_id, teacher_input),
+                error=str(exc),
+                retries=self.request.retries,
+            )
             raise
         raise self.retry(exc=exc, countdown=15 * 2**self.request.retries) from exc
 

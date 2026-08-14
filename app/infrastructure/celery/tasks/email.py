@@ -11,6 +11,7 @@ than permanently, and nobody is waiting on this in a request.
 
 import logging
 
+from app.infrastructure.celery import dead_letter
 from app.infrastructure.celery.worker import celery_app
 from app.infrastructure.email.sender import EmailMessage, get_email_sender
 
@@ -31,6 +32,15 @@ def send_email(self, to: str, subject: str, text: str, html: str | None = None) 
             # Give up loudly: the user was told to check their inbox and there
             # is nothing there. This is what the CeleryTaskFailures alert sees.
             logger.error("email delivery failed permanently: %s", exc)
+            # The address is kept so a replay can reach the person who never
+            # got their reset link; the body is not, because a dead letter
+            # list is not a place to keep a password reset token.
+            dead_letter.record(
+                task=self.name,
+                args=(to, subject),
+                error=str(exc),
+                retries=self.request.retries,
+            )
             raise
         # 30s, 1m, 2m, 4m, 8m.
         raise self.retry(exc=exc, countdown=30 * 2**self.request.retries) from exc

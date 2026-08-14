@@ -8,6 +8,7 @@ marked FAILED, with the error stored on it for visibility via the status API.
 import asyncio
 from uuid import UUID
 
+from app.infrastructure.celery import dead_letter
 from app.infrastructure.celery.worker import celery_app
 from app.infrastructure.database.session import WorkerSessionFactory
 from app.infrastructure.redis.client import new_redis_client
@@ -65,11 +66,20 @@ def ingest_document(self, document_id: str) -> None:
     except AppError as exc:
         # Permanent errors (e.g. unsupported/corrupt file): fail fast, no retry.
         asyncio.run(_mark_failed(doc_uuid, str(exc)))
+        dead_letter.record(
+            task=self.name, args=(document_id,), error=str(exc), retries=0
+        )
         raise
     except Exception as exc:
         # Transient errors (e.g. embedding model briefly down): retry, then fail.
         if self.request.retries >= self.max_retries:
             asyncio.run(_mark_failed(doc_uuid, str(exc)))
+            dead_letter.record(
+                task=self.name,
+                args=(document_id,),
+                error=str(exc),
+                retries=self.request.retries,
+            )
             raise
         # Exponential backoff: 15s, 30s, 60s.
         raise self.retry(exc=exc, countdown=15 * 2**self.request.retries) from exc

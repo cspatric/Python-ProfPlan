@@ -25,6 +25,7 @@ from redis.asyncio import from_url
 from sqlalchemy import text
 
 from app.core.config import get_settings
+from app.infrastructure.celery.dead_letter import DEAD_LETTER_KEY
 
 logger = logging.getLogger("app.metrics")
 
@@ -37,6 +38,16 @@ DEPENDENCY_UP = Gauge(
     "profplan_dependency_up",
     "1 when the dependency answered its last probe, 0 when it did not.",
     ["dependency"],
+    multiprocess_mode="livemostrecent",
+)
+
+# A dead letter is work that was accepted and then dropped: a document nobody
+# can search, a plan that never filled in, a reset email that never arrived.
+# Nothing else in the stack reports it, because from the queue's point of view
+# those tasks are finished.
+DEAD_LETTER_DEPTH = Gauge(
+    "profplan_dead_letter_depth",
+    "Tasks that exhausted their retries and are waiting to be looked at.",
     multiprocess_mode="livemostrecent",
 )
 
@@ -115,11 +126,20 @@ async def _probe_queue_depth(broker, queues: list[str]) -> None:
             logger.warning("queue depth probe failed: %s (%s)", queue, exc)
 
 
+async def _probe_dead_letter(broker) -> None:
+    """Report how much work has been given up on."""
+    try:
+        DEAD_LETTER_DEPTH.set(await broker.llen(DEAD_LETTER_KEY))
+    except Exception:  # noqa: BLE001 — a probe must never take the app down
+        logger.debug("dead letter probe failed", exc_info=True)
+
+
 async def probe_once(broker, queues: list[str]) -> None:
     """One round of every probe. Never raises."""
     await _probe_database()
     await _probe_redis()
     await _probe_queue_depth(broker, queues)
+    await _probe_dead_letter(broker)
 
 
 async def _probe_loop() -> None:

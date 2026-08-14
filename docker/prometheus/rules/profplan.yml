@@ -191,3 +191,35 @@ groups:
             This alert always fires. Its absence is the signal, not its
             presence.
           runbook: "docs/observability/ALERTS.md#watchdog"
+
+  - name: dead_letter
+    rules:
+      # Work that was accepted and then given up on. Nothing else sees it: to
+      # the queue those tasks are finished, and to the API they never existed.
+      # Every entry is a teacher whose document is not searchable, whose plan
+      # never filled in, or whose reset email never arrived.
+      - alert: DeadLetterQueueGrowing
+        expr: increase(profplan_dead_letter_depth[1h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tasks are being given up on"
+          description: >-
+            {{ $value }} task(s) exhausted their retries in the last hour and
+            are sitting in the dead letter queue. Read them with
+            `scripts/dead_letter.py list`; they carry their arguments, so they
+            can be replayed once the cause is fixed.
+          runbook: docs/observability/RUNBOOK-dead-letter.md
+
+      - alert: DeadLetterQueueBacklog
+        expr: profplan_dead_letter_depth > 50
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} tasks abandoned and never dealt with"
+          description: >-
+            The dead letter queue is not being drained. It is capped at 1000
+            entries, so past that the oldest failures are lost for good.
+          runbook: docs/observability/RUNBOOK-dead-letter.md
