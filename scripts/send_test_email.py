@@ -15,6 +15,12 @@ arrives here is a password reset that will arrive too.
 
 import argparse
 import sys
+from pathlib import Path
+
+# Run from anywhere: python puts the *script's* directory on the path, not the
+# one it was started from, so `python scripts/x.py` cannot see `app` without
+# this. The documented command has to work as documented.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import get_settings
 from app.infrastructure.email.sender import EmailMessage, get_email_sender

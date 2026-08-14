@@ -8,6 +8,12 @@ Usage (inside the api container):
 
 import asyncio
 import sys
+from pathlib import Path
+
+# Run from anywhere: python puts the *script's* directory on the path, not the
+# one it was started from, so `python scripts/x.py` cannot see `app` without
+# this. The documented command has to work as documented.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.security import hash_password
 from app.infrastructure.database.session import SessionFactory
