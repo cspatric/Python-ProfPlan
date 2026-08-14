@@ -26,12 +26,6 @@ class UnsupportedDocumentTypeError(UnsupportedMediaTypeError):
     detail = "Unsupported document type"
 
 
-class DocumentContentNotFoundError(NotFoundError):
-    """Raised when a document content does not exist."""
-
-    detail = "Document content not found"
-
-
 class InvalidSubjectError(UnprocessableError):
     """Raised when the referenced subject does not belong to the user."""
 

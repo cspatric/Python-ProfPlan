@@ -1,6 +1,7 @@
 """Ingestion pipeline: file -> markdown -> chunks -> embeddings -> index."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,20 @@ from app.modules.rag.infrastructure.chunking.chunker import chunk_markdown
 from app.modules.rag.infrastructure.parser.document_parser import (
     parse_to_markdown,
 )
+
+#: How long a document may sit in PROCESSING before another run may take it
+#: over. Long enough that a slow but living ingestion is never interrupted (a
+#: hundred-chunk document on a CPU-only embedder takes minutes), short enough
+#: that a run killed by a reboot does not strand the document for a day.
+_STALE_AFTER = timedelta(minutes=30)
+
+
+def _is_stale(updated_at: datetime | None) -> bool:
+    if updated_at is None:
+        return True
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=UTC)
+    return datetime.now(UTC) - updated_at > _STALE_AFTER
 
 
 class IngestionService:
@@ -48,25 +63,50 @@ class IngestionService:
         actually persisted in pgvector — never before.
 
         Idempotent: a redelivered Celery task or a duplicate trigger for a
-        document that's already PROCESSING or INDEXED is a safe no-op instead
-        of re-downloading, re-parsing and re-embedding from scratch.
+        document that's already INDEXED, or that another worker is actively
+        processing, is a safe no-op instead of re-downloading, re-parsing and
+        re-embedding from scratch.
+
+        "Actively" is the important word. A document left PROCESSING by a run
+        that died (a timeout, a killed worker, a reboot) is not being worked on
+        by anyone, and treating it as if it were is what made a failed
+        ingestion permanent: the Celery retry returned here immediately,
+        reported success, and the document sat spinning in the UI forever. Past
+        the stale threshold it is taken over.
         """
         document = await self._documents.get_for_processing(document_id)
         if document is None:
             return None
-        if document.ingestion_status in (
-            IngestionStatus.PROCESSING,
-            IngestionStatus.INDEXED,
+        if document.ingestion_status is IngestionStatus.INDEXED:
+            return None
+        if document.ingestion_status is IngestionStatus.PROCESSING and not _is_stale(
+            document.updated_at
         ):
             return None
 
+        try:
+            return await self._ingest(document_id, document.document_path)
+        except Exception as exc:
+            # Leave a document that failed in FAILED, not in PROCESSING. It is
+            # what tells the retry it may take the work, and what lets the page
+            # say something happened instead of spinning.
+            await self._session.rollback()
+            await self._documents.set_ingestion_status(
+                document_id, IngestionStatus.FAILED, error=str(exc)[:2000]
+            )
+            await self._session.commit()
+            raise
+
+    async def _ingest(
+        self, document_id: UUID, document_path: str
+    ) -> DocumentContent | None:
         await self._documents.set_ingestion_status(
             document_id, IngestionStatus.PROCESSING, error=None
         )
         await self._session.commit()
 
-        data = await asyncio.to_thread(self._storage.get_object, document.document_path)
-        markdown = parse_to_markdown(document.document_path, data)
+        data = await asyncio.to_thread(self._storage.get_object, document_path)
+        markdown = parse_to_markdown(document_path, data)
 
         latest = await self._contents.get_latest(document_id)
         version = latest.version + 1 if latest else 1
@@ -82,7 +122,22 @@ class IngestionService:
 
         pieces = chunk_markdown(markdown)
         if pieces:
-            embeddings = await self._embedder.embed_texts(pieces)
+            # The total is only knowable here, after parsing and chunking.
+            # Publishing it now, and the count as each batch lands, is what
+            # lets the page show progress and an estimate instead of an
+            # indefinite spinner on a job that runs for minutes.
+            await self._documents.set_ingestion_progress(
+                document_id, done=0, total=len(pieces)
+            )
+            await self._session.commit()
+
+            async def report(done: int) -> None:
+                await self._documents.set_ingestion_progress(
+                    document_id, done=done, total=len(pieces)
+                )
+                await self._session.commit()
+
+            embeddings = await self._embedder.embed_texts(pieces, on_progress=report)
             chunks = [
                 ChunkInput(
                     chunk_index=index,

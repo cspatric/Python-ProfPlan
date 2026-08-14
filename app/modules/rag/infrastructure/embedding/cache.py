@@ -12,7 +12,7 @@ from redis.asyncio import Redis
 from app.core.config import get_settings
 from app.infrastructure.redis.cache import RedisCache
 from app.infrastructure.redis.client import redis_client
-from app.modules.rag.domain.interfaces import Embedder
+from app.modules.rag.domain.interfaces import Embedder, EmbedProgress
 from app.modules.rag.infrastructure.embedding.ollama_embedding import (
     OllamaEmbedding,
 )
@@ -30,15 +30,32 @@ class CachedEmbedding:
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
         return f"{self._model}:{digest}"
 
-    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+    async def embed_texts(
+        self, texts: list[str], *, on_progress: EmbedProgress | None = None
+    ) -> list[list[float]]:
         if not texts:
             return []
         keys = [self._key(text) for text in texts]
         results: list[list[float] | None] = await self._cache.mget_json(keys)
 
         missing = [i for i, cached in enumerate(results) if cached is None]
+
+        # What the cache already had is done work, and saying so keeps a
+        # re-upload of a known document from looking stuck at zero while it
+        # finishes in seconds.
+        cached_count = len(texts) - len(missing)
+        if on_progress is not None and cached_count:
+            await on_progress(cached_count)
+
         if missing:
-            fresh = await self._embedder.embed_texts([texts[i] for i in missing])
+            inner = (
+                None
+                if on_progress is None
+                else lambda done: on_progress(cached_count + done)
+            )
+            fresh = await self._embedder.embed_texts(
+                [texts[i] for i in missing], on_progress=inner
+            )
             for index, vector in zip(missing, fresh, strict=True):
                 results[index] = vector
                 await self._cache.set_json(keys[index], vector)

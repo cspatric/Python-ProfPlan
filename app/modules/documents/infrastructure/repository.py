@@ -1,5 +1,6 @@
 """Persistence access for documents and their parsed content."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -75,10 +76,31 @@ class DocumentRepository:
         error: str | None = None,
     ) -> None:
         """Update a document's ingestion status (does not commit)."""
+        values: dict[str, object] = {
+            "ingestion_status": status,
+            "ingestion_error": error,
+        }
+        if status is IngestionStatus.PROCESSING:
+            # A fresh run starts the clock over. Keeping the previous run's
+            # start would make the estimate read as hours remaining on a
+            # document that was just re-queued.
+            values |= {
+                "ingestion_started_at": datetime.now(UTC),
+                "ingestion_chunks_done": 0,
+                "ingestion_chunks_total": None,
+            }
+        await self._session.execute(
+            update(Document).where(Document.uuid == document_id).values(**values)
+        )
+
+    async def set_ingestion_progress(
+        self, document_id: UUID, *, done: int, total: int
+    ) -> None:
+        """Record how far the embedding has got (does not commit)."""
         await self._session.execute(
             update(Document)
             .where(Document.uuid == document_id)
-            .values(ingestion_status=status, ingestion_error=error)
+            .values(ingestion_chunks_done=done, ingestion_chunks_total=total)
         )
 
 

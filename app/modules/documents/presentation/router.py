@@ -16,11 +16,20 @@ from app.modules.documents.presentation.dependencies import (
     UploadServiceDep,
 )
 from app.modules.documents.presentation.schemas import (
+    MAX_DOCUMENT_TITLE,
     DocumentResponse,
     DocumentStatusResponse,
 )
+from app.shared.validation import RequiredText
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+#: The title arrives as a form field, so it carries its own rules instead of
+#: inheriting them from a request model. Trimmed first, so a title of spaces
+#: fails ``min_length`` rather than being stored as a blank name.
+DocumentTitle = Annotated[
+    RequiredText, Form(min_length=1, max_length=MAX_DOCUMENT_TITLE)
+]
 
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -31,7 +40,7 @@ async def upload_document(
     user: CurrentUser,
     service: UploadServiceDep,
     subject_id: Annotated[UUID, Form()],
-    title: Annotated[str, Form()],
+    title: DocumentTitle,
     file: Annotated[UploadFile, File()],
 ) -> DocumentResponse:
     """Upload a document; it is stored and queued for async ingestion."""

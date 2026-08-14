@@ -99,6 +99,13 @@ class Settings(BaseSettings):
     # Embeddings (Ollama)
     ollama_base_url: str = "http://ollama:11434"
     embedding_model: str = "bge-m3"
+    # Chunks per embedding request. bge-m3 on a CPU costs about five seconds a
+    # chunk and batching wins nothing, so this is sized so one request stays
+    # far inside the timeout below, not to go faster.
+    embedding_batch_size: int = 8
+    # Per request, not per document. Eight chunks cost roughly forty seconds on
+    # the slowest machine measured, so this leaves several times that in hand.
+    embedding_timeout_seconds: float = 300.0
 
     # LLM gateway (fallback chain: Claude -> OpenAI -> Gemini -> Ollama)
     anthropic_api_key: str = ""

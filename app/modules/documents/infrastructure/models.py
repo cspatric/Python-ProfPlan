@@ -62,6 +62,17 @@ class Document(Base):
         index=True,
     )
     ingestion_error: Mapped[str | None] = mapped_column(Text)
+    # Ingestion progress, so the page can say how far along it is and how much
+    # longer it will take. Only meaningful while PROCESSING; the total is known
+    # once the text is chunked, and the count climbs as batches are embedded.
+    # `started_at` is what makes the estimate honest: the remaining time is
+    # computed from the rate this machine is actually managing right now, not
+    # from a constant baked in somewhere.
+    ingestion_chunks_total: Mapped[int | None] = mapped_column(Integer)
+    ingestion_chunks_done: Mapped[int | None] = mapped_column(Integer)
+    ingestion_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
