@@ -14,6 +14,10 @@
 
 ---
 
+> The decisions behind this shape, and what each one cost, are recorded in
+> [`docs/adr/`](../adr/README.md). Read those before changing anything that
+> looks backwards; several of them are, on purpose.
+
 ## The whole system in one diagram
 
 > The diagram's **source of truth** is [`architecture.mmd`](./architecture.mmd);
