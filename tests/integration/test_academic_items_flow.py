@@ -59,3 +59,29 @@ async def test_update_metadata_and_soft_delete(auth_client, module_id):
 async def test_create_with_unowned_module_is_rejected(auth_client):
     resp = await auth_client.post(BASE, json=_payload(str(uuid4())))
     assert resp.status_code == 422
+
+
+async def test_response_carries_the_generation_status(auth_client, module_id):
+    """The status is what the page reads to tell "being written" from "empty".
+
+    It has a default on the schema, so forgetting to pass it produces a valid
+    response that claims every item was made by hand. That is exactly what
+    happened, and the activity page showed "no material of its own" on items
+    the workers had not reached yet.
+    """
+    created = await auth_client.post(
+        BASE,
+        json={"module_id": module_id, "title": "Queued item"},
+    )
+    assert created.status_code == 201
+    item_id = created.json()["uuid"]
+
+    # A hand-made item has no generation status, and the field must be present
+    # in the payload rather than missing from it.
+    assert "generation_status" in created.json()
+
+    fetched = await auth_client.get(f"{BASE}/{item_id}")
+    assert "generation_status" in fetched.json()
+
+    listed = await auth_client.get(f"{BASE}?module_id={module_id}")
+    assert all("generation_status" in item for item in listed.json())

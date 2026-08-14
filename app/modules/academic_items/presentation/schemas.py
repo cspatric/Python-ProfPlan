@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.modules.generation.domain.entities import GenerationItemStatus
+
 
 class AcademicItemMetadata(BaseModel):
     """Structure of the academic item `metadata` JSON field."""
@@ -57,6 +59,11 @@ class AcademicItemResponse(BaseModel):
     description: str | None
     content: dict[str, Any] | None
     metadata: AcademicItemMetadata | None
+    # Null on hand-made items; on generated ones it says whether the worker
+    # has written the body yet. Without it the frontend cannot tell an item
+    # still in the queue from one whose generation failed, and shows a
+    # spinner that never stops for the second case.
+    generation_status: GenerationItemStatus | None = None
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime

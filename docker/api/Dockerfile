@@ -12,8 +12,14 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # System dependencies
+# build-essential/curl for the build and the healthcheck; the pango, cairo and
+# gdk-pixbuf libraries are WeasyPrint's text shaping and rasterising backend,
+# which it loads at runtime and cannot ship itself.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential curl \
+    && apt-get install -y --no-install-recommends \
+        build-essential curl \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libfribidi0 \
+        libcairo2 libgdk-pixbuf-2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # uv (fast dependency manager)

@@ -30,6 +30,12 @@ dependencies = [
     "openpyxl>=3.1",
     "httpx>=0.28",
     "python-multipart>=0.0.20",
+    # Activity handouts as PDF: the model writes Markdown, `markdown` turns it
+    # into HTML and WeasyPrint lays that out with real CSS (page breaks,
+    # running footers, table borders), which is what makes the file printable
+    # rather than a screenshot of a web page.
+    "markdown>=3.7",
+    "weasyprint>=63",
     "prometheus-client>=0.21",
     "prometheus-fastapi-instrumentator>=7.0",
     "opentelemetry-sdk>=1.29",

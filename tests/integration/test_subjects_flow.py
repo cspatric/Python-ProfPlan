@@ -57,3 +57,17 @@ async def test_user_cannot_see_other_users_subject(auth_client, user_factory):
         )
         resp = await other.get(f"{BASE}/{sid}")
         assert resp.status_code == 404
+
+
+async def test_a_whitespace_only_name_is_rejected(auth_client):
+    """min_length=1 alone accepted three spaces as a subject name."""
+    resp = await auth_client.post(BASE, json={"name": "   "})
+
+    assert resp.status_code == 422
+
+
+async def test_the_name_is_trimmed(auth_client):
+    resp = await auth_client.post(BASE, json={"name": "  Biology  "})
+
+    assert resp.status_code == 201
+    assert resp.json()["name"] == "Biology"

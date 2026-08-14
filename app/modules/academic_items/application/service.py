@@ -1,13 +1,15 @@
 """Academic item use cases (CRUD scoped to the owner, soft delete)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.academic_items.application.handout_service import HandoutContext
 from app.modules.academic_items.domain.exceptions import (
     AcademicItemNotFoundError,
+    HandoutNotReadyError,
     InvalidModuleError,
 )
 from app.modules.academic_items.infrastructure.models import AcademicItem
@@ -15,6 +17,16 @@ from app.modules.academic_items.infrastructure.repository import (
     AcademicItemRepository,
 )
 from app.modules.plan_modules.infrastructure.repository import ModuleRepository
+
+
+def _as_date(value: object) -> date | None:
+    """Read a date out of the metadata JSON, which stores it as a datetime."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
 
 
 class AcademicItemService:
@@ -58,6 +70,27 @@ class AcademicItemService:
         if item is None:
             raise AcademicItemNotFoundError
         return item
+
+    async def handout(self, *, user_id: UUID, item_id: UUID) -> HandoutContext:
+        """The item, described the way the printable handout needs it."""
+        item = await self.get(user_id=user_id, item_id=item_id)
+        metadata = item.item_metadata or {}
+        placement = await self._repo.context_for_handout(item_id, user_id)
+
+        body = (item.content or {}).get("markdown") or ""
+        if not body.strip():
+            raise HandoutNotReadyError
+
+        return HandoutContext(
+            title=item.title,
+            body=body,
+            is_graded=bool(metadata.get("is_graded")),
+            module_title=placement[0] if placement else None,
+            subject_name=placement[1] if placement else None,
+            starts_at=_as_date(metadata.get("starts_at")),
+            ends_at=_as_date(metadata.get("ends_at")),
+            description=item.description,
+        )
 
     async def update(
         self, *, user_id: UUID, item_id: UUID, data: dict[str, Any]
