@@ -1,0 +1,144 @@
+# Service level objectives.
+#
+# The other rules file answers "is it up". This one answers "is it keeping its
+# promise", which is a different question and the only one a teacher would
+# recognise. See docs/observability/SLO.md for what each objective means and
+# why it is set where it is.
+#
+# The alerts fire on burn rate, not on a threshold being touched. A single slow
+# minute is not an incident; spending a month's error budget in an hour is.
+groups:
+  - name: slo_recording
+    interval: 30s
+    rules:
+      # --- availability: requests the API answered without failing ---------
+      # 5xx only. A 4xx is the client being told no, which is the API working.
+      - record: slo:api_requests:rate5m
+        expr: sum(rate(http_requests_total{handler!="/metrics"}[5m]))
+
+      # `or vector(0)` is not decoration. With no 5xx at all the inner sum is
+      # an empty vector, the division below returns nothing, and a dashboard
+      # shows "no data" where it should show a healthy zero. That reads as
+      # broken monitoring, which is worse than a number nobody likes.
+      - record: slo:api_errors:rate5m
+        expr: |
+          sum(rate(http_requests_total{handler!="/metrics",status=~"5.."}[5m]))
+            or vector(0)
+
+      - record: slo:api_error_ratio:rate5m
+        expr: |
+          slo:api_errors:rate5m
+            / clamp_min(slo:api_requests:rate5m, 0.001)
+
+      - record: slo:api_error_ratio:rate1h
+        expr: |
+          (sum(rate(http_requests_total{handler!="/metrics",status=~"5.."}[1h])) or vector(0))
+            / clamp_min(sum(rate(http_requests_total{handler!="/metrics"}[1h])), 0.001)
+
+      - record: slo:api_error_ratio:rate6h
+        expr: |
+          (sum(rate(http_requests_total{handler!="/metrics",status=~"5.."}[6h])) or vector(0))
+            / clamp_min(sum(rate(http_requests_total{handler!="/metrics"}[6h])), 0.001)
+
+      # --- latency: how much of the traffic was answered quickly -----------
+      # Reading and navigating, not the AI. Plan creation is 50 ms because it
+      # no longer waits for the planner (see ADR 0003), so it belongs here too.
+      - record: slo:api_fast_ratio:rate1h
+        expr: |
+          (sum(rate(http_request_duration_seconds_bucket{le="0.5",handler!="/metrics"}[1h])) or vector(0))
+            / clamp_min(sum(rate(http_request_duration_seconds_count{handler!="/metrics"}[1h])), 0.001)
+
+      # --- plan drafting: the promise the product actually makes -----------
+      - record: slo:plan_draft_fast_ratio:rate6h
+        expr: |
+          sum(rate(profplan_plan_draft_seconds_bucket{le="120"}[6h]))
+            / clamp_min(sum(rate(profplan_plan_draft_seconds_count[6h])), 0.001)
+
+      - record: slo:plan_draft_failure_ratio:rate6h
+        expr: |
+          (sum(rate(profplan_plan_drafts_total{outcome="failed"}[6h])) or vector(0))
+            / clamp_min(sum(rate(profplan_plan_drafts_total[6h])), 0.001)
+
+  - name: slo_burn
+    rules:
+      # 99% availability over 30 days is a budget of 1% of requests. Burning it
+      # 14 times faster than sustainable exhausts a month in about two days,
+      # which is worth waking up for; 6 times faster is worth a ticket.
+      - alert: ApiAvailabilityBudgetBurningFast
+        expr: |
+          slo:api_error_ratio:rate5m > (14.4 * 0.01)
+            and slo:api_error_ratio:rate1h > (14.4 * 0.01)
+        for: 2m
+        labels:
+          severity: critical
+          slo: api_availability
+        annotations:
+          summary: "Availability budget burning 14x too fast"
+          description: >-
+            {{ $value | humanizePercentage }} of requests are failing. At this
+            rate the month's error budget is gone in about two days. The
+            objective is 99% of requests answered without a 5xx over 30 days.
+          runbook: docs/observability/SLO.md
+
+      - alert: ApiAvailabilityBudgetBurning
+        expr: |
+          slo:api_error_ratio:rate1h > (6 * 0.01)
+            and slo:api_error_ratio:rate6h > (6 * 0.01)
+        for: 15m
+        labels:
+          severity: warning
+          slo: api_availability
+        annotations:
+          summary: "Availability budget burning 6x too fast"
+          description: >-
+            {{ $value | humanizePercentage }} of requests are failing over the
+            last hour and the last six. Not an emergency, but the month's
+            budget does not survive it.
+          runbook: docs/observability/SLO.md
+
+      - alert: ApiLatencyObjectiveMissed
+        expr: slo:api_fast_ratio:rate1h < 0.95
+        for: 15m
+        labels:
+          severity: warning
+          slo: api_latency
+        annotations:
+          summary: "Under 95% of requests answered within 500ms"
+          description: >-
+            {{ $value | humanizePercentage }} were fast enough over the last
+            hour, against an objective of 95%. This excludes nothing: if the AI
+            is being waited on inside a request, that is the bug.
+          runbook: docs/observability/SLO.md
+
+      # The product promise. A teacher creating a plan is waiting for this.
+      - alert: PlanDraftingObjectiveMissed
+        expr: |
+          slo:plan_draft_fast_ratio:rate6h < 0.95
+            and sum(rate(profplan_plan_draft_seconds_count[6h])) > 0
+        for: 30m
+        labels:
+          severity: warning
+          slo: plan_drafting
+        annotations:
+          summary: "Plans are not being drafted within two minutes"
+          description: >-
+            Only {{ $value | humanizePercentage }} of plans were drafted within
+            two minutes over the last six hours, against an objective of 95%.
+            Look at the LLM provider chain and the Celery queue depth: the
+            drafting time is measured from the queue, so a backlog shows up
+            here before it shows up anywhere else.
+          runbook: docs/observability/SLO.md
+
+      - alert: PlanDraftingFailing
+        expr: slo:plan_draft_failure_ratio:rate6h > 0.05
+        for: 15m
+        labels:
+          severity: critical
+          slo: plan_drafting
+        annotations:
+          summary: "More than 5% of plan draftings are failing outright"
+          description: >-
+            {{ $value | humanizePercentage }} of drafting attempts exhausted
+            their retries and left the plan without a roadmap. These are
+            visible to the teacher as a plan that never filled in.
+          runbook: docs/observability/SLO.md

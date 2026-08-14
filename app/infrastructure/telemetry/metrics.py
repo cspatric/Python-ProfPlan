@@ -20,7 +20,7 @@ import asyncio
 import contextlib
 import logging
 
-from prometheus_client import Counter, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 from redis.asyncio import from_url
 from sqlalchemy import text
 
@@ -51,6 +51,27 @@ LLM_REQUESTS = Counter(
     "profplan_llm_requests_total",
     "LLM gateway attempts, by provider and outcome.",
     ["provider", "outcome"],
+)
+
+# The SLI behind "a plan is drafted while the teacher is still watching"
+# (docs/observability/SLO.md). Measured from the moment the plan is created to
+# the moment its roadmap exists, which is the wait a teacher actually
+# experiences; timing the LLM call alone would leave out the queue, and the
+# queue is where the wait grows under load.
+#
+# The buckets are placed around the objective (120s) rather than spread evenly,
+# because the only question this has to answer precisely is "what fraction
+# landed under two minutes".
+PLAN_DRAFT_SECONDS = Histogram(
+    "profplan_plan_draft_seconds",
+    "Time from creating a plan to its roadmap existing.",
+    buckets=(5, 15, 30, 60, 90, 120, 180, 300, 600),
+)
+
+PLAN_DRAFTS = Counter(
+    "profplan_plan_drafts_total",
+    "Plan drafting attempts, by outcome.",
+    ["outcome"],
 )
 
 LLM_ALL_PROVIDERS_FAILED = Counter(

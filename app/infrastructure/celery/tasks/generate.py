@@ -7,6 +7,7 @@ and the run recomputed to PARTIAL.
 """
 
 import asyncio
+import time
 from uuid import UUID
 
 from redis.asyncio import Redis
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.celery.worker import celery_app
 from app.infrastructure.database.session import WorkerSessionFactory
 from app.infrastructure.redis.client import new_redis_client
+from app.infrastructure.telemetry.metrics import PLAN_DRAFT_SECONDS, PLAN_DRAFTS
 from app.modules.ai.infrastructure.gateway.llm_gateway import build_gateway
 from app.modules.ai.infrastructure.repository import AiProviderRepository
 from app.modules.documents.infrastructure.repository import (
@@ -114,7 +116,12 @@ async def _fail_run(run_id: UUID, error: str) -> None:
 
 @celery_app.task(bind=True, name="plans.generate", max_retries=_MAX_RETRIES)
 def generate_plan(
-    self, plan_id: str, user_id: str, run_id: str, teacher_input: str | None = None
+    self,
+    plan_id: str,
+    user_id: str,
+    run_id: str,
+    teacher_input: str | None = None,
+    queued_at: float | None = None,
 ) -> None:
     """Draft the roadmap for a plan, then fan out one task per item.
 
@@ -132,8 +139,16 @@ def generate_plan(
             # The run carries the reason, which is what the page reads: a plan
             # whose roadmap never arrived has to say so rather than spin.
             asyncio.run(_fail_run(run_uuid, str(exc)))
+            PLAN_DRAFTS.labels(outcome="failed").inc()
             raise
         raise self.retry(exc=exc, countdown=15 * 2**self.request.retries) from exc
+
+    # Timed from when the request queued this, not from when the worker picked
+    # it up: the teacher is waiting through the queue too, and under load the
+    # queue is where the wait actually grows.
+    if queued_at is not None:
+        PLAN_DRAFT_SECONDS.observe(max(time.time() - queued_at, 0.0))
+    PLAN_DRAFTS.labels(outcome="drafted").inc()
 
     for item_id in items:
         run_item.delay(str(item_id))
