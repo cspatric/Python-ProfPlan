@@ -23,7 +23,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(
         String(320), nullable=False, unique=True, index=True
     )
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Null for an account that signs in with a provider and has no password of
+    # its own. A placeholder hash would make "does this account have a
+    # password" a question nothing can answer.
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     profile_picture: Mapped[str | None] = mapped_column(String(1024))
     status: Mapped[UserStatus] = mapped_column(
         Enum(UserStatus, name="user_status"),

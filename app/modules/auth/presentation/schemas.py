@@ -9,6 +9,17 @@ from app.modules.users.domain.entities import UserRole, UserStatus
 from app.shared.validation import RequiredText
 
 
+class ProvidersResponse(BaseModel):
+    """Which external sign-in providers this deployment can actually use.
+
+    The frontend asks rather than being told at build time: whether Google is
+    configured is a property of the running backend, and a button that posts to
+    an endpoint that is not registered is the failure this avoids.
+    """
+
+    google: bool
+
+
 class LoginRequest(BaseModel):
     """Credentials submitted to the login endpoint."""
 

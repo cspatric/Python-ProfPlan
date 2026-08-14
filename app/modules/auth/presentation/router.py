@@ -2,13 +2,21 @@
 
 import logging
 import secrets
+from typing import Annotated
 
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi.responses import RedirectResponse
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.csrf import CSRF_COOKIE_NAME
 from app.api.rate_limit import auth_limit
 from app.core.config import get_settings
+from app.infrastructure.database.session import get_session
+from app.infrastructure.redis.client import get_redis
 from app.modules.auth.application.dto import IssuedTokens
+from app.modules.auth.application.oauth_service import OAuthService
+from app.modules.auth.infrastructure import google_oauth
 from app.modules.auth.presentation.dependencies import (
     AccountServiceDep,
     AuthServiceDep,
@@ -20,9 +28,11 @@ from app.modules.auth.presentation.schemas import (
     MessageResponse,
     PasswordResetConfirm,
     PasswordResetRequest,
+    ProvidersResponse,
     RegisterRequest,
     UserResponse,
 )
+from app.shared.exceptions.base import AppError
 
 logger = logging.getLogger("app.auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -302,3 +312,81 @@ async def confirm_email_verification(
         user_agent=request.headers.get("user-agent"),
     )
     return UserResponse.model_validate(user)
+
+
+@router.get("/providers", response_model=ProvidersResponse)
+async def providers() -> ProvidersResponse:
+    """Say which external sign-in options exist here. Public on purpose.
+
+    It reveals nothing an unauthenticated visitor cannot see by looking at the
+    sign-in page, and the page needs it before anyone has signed in.
+    """
+    return ProvidersResponse(google=_settings.google_oauth_enabled)
+
+
+# --------------------------------------------------------------------------- #
+# Sign in with Google
+#
+# Registered only when a client id and secret are configured. An endpoint that
+# exists and cannot work is worse than one that is honestly absent: it turns a
+# missing setting into a runtime error for whoever clicks the button.
+# --------------------------------------------------------------------------- #
+if _settings.google_oauth_enabled:
+
+    @router.get("/oauth/google", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    @auth_limit
+    async def google_start(
+        request: Request,
+        redis: Annotated[Redis, Depends(get_redis)],
+    ) -> RedirectResponse:
+        """Send the browser to Google, remembering the state on this side."""
+        return RedirectResponse(
+            await google_oauth.start(redis),
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+    @router.get("/oauth/google/callback")
+    @auth_limit
+    async def google_callback(
+        request: Request,
+        redis: Annotated[Redis, Depends(get_redis)],
+        session: Annotated[AsyncSession, Depends(get_session)],
+        service: AuthServiceDep,
+        code: str | None = None,
+        state: str | None = None,
+        error: str | None = None,
+    ) -> RedirectResponse:
+        """Finish the flow: set the session cookies and hand back to the app.
+
+        Everything that can go wrong here ends in the same place, the login
+        page with a flag. The browser is a user agent, not an API client:
+        answering it with a 401 body leaves somebody looking at raw JSON.
+        """
+        failure = RedirectResponse(
+            f"{_settings.oauth_failure_redirect}?oauth=failed",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+        # The user pressed cancel on Google's consent screen. Not an error.
+        if error or not code:
+            return failure
+
+        try:
+            await google_oauth.consume_state(redis, state)
+            identity = await google_oauth.exchange(code)
+            user = await OAuthService(session).sign_in_with_google(identity)
+            tokens = await service.start_session(
+                user=user,
+                ip_address=_client_ip(request),
+                user_agent=request.headers.get("user-agent"),
+            )
+        except AppError:
+            logger.warning("google sign-in refused", exc_info=True)
+            return failure
+
+        response = RedirectResponse(
+            _settings.oauth_success_redirect,
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+        _set_auth_cookies(response, tokens)
+        return response

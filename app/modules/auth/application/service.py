@@ -113,6 +113,12 @@ class AuthService:
         if (
             user is None
             or user.status != UserStatus.ACTIVE
+            # An account created through a provider has no password to check.
+            # Falling through to verify_password with None would raise; the
+            # answer is the same as a wrong password, and deliberately so:
+            # saying "that address signs in with Google" here would confirm
+            # the address exists to anyone who asks.
+            or user.password_hash is None
             or not verify_password(password, user.password_hash)
         ):
             await self._rate_limiter.register_failure(ip_key)
@@ -138,7 +144,7 @@ class AuthService:
         # parameters can be replaced. Without this, raising the cost in the
         # settings protects new accounts and leaves every existing one on the
         # old parameters forever.
-        if password_needs_rehash(user.password_hash):
+        if user.password_hash and password_needs_rehash(user.password_hash):
             user.password_hash = hash_password(password)
 
         if get_settings().require_email_verification and user.email_verified_at is None:
@@ -152,6 +158,32 @@ class AuthService:
             await self._session.commit()
             raise EmailNotVerifiedError
 
+        await self._users.mark_logged_in(user)
+        tokens = await self._issue_tokens(user, ip_address, user_agent)
+        await self._auth_logs.record(
+            event=AuthEvent.LOGIN_SUCCESS,
+            user_id=user.uuid,
+            email=user.email,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        await self._session.commit()
+        return tokens
+
+    async def start_session(
+        self,
+        *,
+        user: User,
+        ip_address: str | None,
+        user_agent: str | None,
+    ) -> IssuedTokens:
+        """Issue cookies for a user whose identity is already established.
+
+        Used by the provider sign-in, where the proof of identity was Google
+        rather than a password. Everything after that point is identical, and
+        it is the same audit event, because from the account's point of view
+        this is a login.
+        """
         await self._users.mark_logged_in(user)
         tokens = await self._issue_tokens(user, ip_address, user_agent)
         await self._auth_logs.record(

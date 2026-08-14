@@ -29,6 +29,24 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str = "redis://redis:6379/0"
 
+    # Sign in with Google. Empty client id disables the whole flow, including
+    # the routes: an endpoint that exists and cannot work is worse than one
+    # that is honestly absent.
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    # Where Google sends the browser back. Must match the console exactly,
+    # including the scheme and any trailing path.
+    google_oauth_redirect_uri: str = (
+        "http://localhost:5173/api/v1/auth/oauth/google/callback"
+    )
+    # Where the user lands afterwards, session cookies already set.
+    oauth_success_redirect: str = "http://localhost:5173/subjects"
+    oauth_failure_redirect: str = "http://localhost:5173/login"
+
+    @property
+    def google_oauth_enabled(self) -> bool:
+        return bool(self.google_oauth_client_id and self.google_oauth_client_secret)
+
     # Runtime connections normally go through PgBouncer. Migrations and
     # anything needing session-level state must not: a pooler in transaction
     # mode can hand the next statement to a different backend. Empty means

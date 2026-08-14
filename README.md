@@ -213,8 +213,8 @@ autogenerate can see them.
 
 ## Authentication
 
-Cookie-based JWT authentication (login only for now; OAuth providers are
-modelled for later). Endpoints under `/api/v1/auth`:
+Cookie-based JWT authentication, with email/password and, when it is
+configured, sign in with Google. Endpoints under `/api/v1/auth`:
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -227,6 +227,9 @@ modelled for later). Endpoints under `/api/v1/auth`:
 | POST | `/auth/email-verification` | Resend the verification link (authenticated) |
 | POST | `/auth/email-verification/confirm` | Spend the token, mark the address verified |
 | GET | `/auth/me` | Return the authenticated user |
+| GET | `/auth/providers` | Which external sign-in options exist here |
+| GET | `/auth/oauth/google` | Start the Google flow (only when configured) |
+| GET | `/auth/oauth/google/callback` | Finish it and set the cookies |
 
 Security properties:
 
@@ -241,6 +244,11 @@ Security properties:
 - Session revocation (single device or all).
 - **Rate limiting** on login via Redis.
 - Authentication **audit log** (`auth_logs`).
+- **Sign in with Google** (authorization code flow, server side exchange,
+  single-use `state`), off unless credentials are set, and refusing to link an
+  unverified address to an account that already exists. The whole of it,
+  including what it deliberately does not check, is in
+  [`docs/deployment/GOOGLE-SIGN-IN.md`](docs/deployment/GOOGLE-SIGN-IN.md).
 
 Create a user (development helper):
 
