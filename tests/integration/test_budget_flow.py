@@ -176,3 +176,109 @@ async def test_a_zero_budget_means_no_limit(auth_client, plan_id, monkeypatch):
     usage = await auth_client.get("/api/v1/usage/me")
 
     assert usage.json()["remaining_usd"] is None
+
+
+# --------------------------------------------------------------------------- #
+# Per model, which is what the two-tier split made necessary: a plan is no
+# longer one model's work.
+# --------------------------------------------------------------------------- #
+
+
+async def test_each_model_share_of_a_run_is_recorded(auth_client, plan_id):
+    from app.modules.ai.domain.usage import ModelUsage, UsageLedger
+    from app.modules.generation.infrastructure.models import PlanGenerationModelUsage
+    from app.modules.generation.infrastructure.repository import GenerationRepository
+
+    async with SessionFactory() as session:
+        plan = await session.scalar(select(Plan).where(Plan.uuid == plan_id))
+        run = PlanGeneration(
+            plan_id=plan.uuid,
+            user_id=plan.user_id,
+            status=GenerationRunStatus.COMPLETED,
+        )
+        session.add(run)
+        await session.commit()
+        run_id = run.uuid
+
+    # Two workers finishing at once, each carrying a different model's share,
+    # which is exactly the case a JSON document on the run would have lost.
+    for model, calls, cost in (("big", 1, "0.010"), ("small", 6, "0.002")):
+        async with SessionFactory() as session:
+            ledger = UsageLedger(
+                calls=calls,
+                input_tokens=100 * calls,
+                output_tokens=200 * calls,
+                cost_usd=float(cost),
+                by_model={
+                    model: ModelUsage(
+                        calls=calls,
+                        input_tokens=100 * calls,
+                        output_tokens=200 * calls,
+                        cost_usd=float(cost),
+                    )
+                },
+            )
+            await GenerationRepository(session).add_usage(run_id, ledger)
+            await session.commit()
+
+    async with SessionFactory() as session:
+        rows = (
+            await session.scalars(
+                select(PlanGenerationModelUsage)
+                .where(PlanGenerationModelUsage.generation_id == run_id)
+                .order_by(PlanGenerationModelUsage.model)
+            )
+        ).all()
+        run = await session.scalar(
+            select(PlanGeneration).where(PlanGeneration.uuid == run_id)
+        )
+
+    assert {row.model: row.calls for row in rows} == {"big": 1, "small": 6}
+    assert {row.model: float(row.cost_usd) for row in rows} == {
+        "big": 0.01,
+        "small": 0.002,
+    }
+    # And the run's own total still agrees with the sum of its parts.
+    assert float(run.llm_cost_usd) == 0.012
+    assert run.llm_calls == 7
+
+
+async def test_the_same_model_twice_adds_rather_than_replaces(auth_client, plan_id):
+    """Every activity is its own worker and they all use the same model. An
+    upsert that overwrote would report one activity's cost for the lot."""
+    from app.modules.ai.domain.usage import ModelUsage, UsageLedger
+    from app.modules.generation.infrastructure.models import PlanGenerationModelUsage
+    from app.modules.generation.infrastructure.repository import GenerationRepository
+
+    async with SessionFactory() as session:
+        plan = await session.scalar(select(Plan).where(Plan.uuid == plan_id))
+        run = PlanGeneration(
+            plan_id=plan.uuid,
+            user_id=plan.user_id,
+            status=GenerationRunStatus.COMPLETED,
+        )
+        session.add(run)
+        await session.commit()
+        run_id = run.uuid
+
+    for _ in range(3):
+        async with SessionFactory() as session:
+            await GenerationRepository(session).add_usage(
+                run_id,
+                UsageLedger(
+                    calls=1,
+                    cost_usd=0.005,
+                    by_model={"small": ModelUsage(calls=1, cost_usd=0.005)},
+                ),
+            )
+            await session.commit()
+
+    async with SessionFactory() as session:
+        row = await session.scalar(
+            select(PlanGenerationModelUsage).where(
+                PlanGenerationModelUsage.generation_id == run_id
+            )
+        )
+
+    assert row.calls == 3
+    assert float(row.cost_usd) == 0.015

@@ -9,7 +9,7 @@
  ],
  "timezone": "browser",
  "schemaVersion": 39,
- "version": 1,
+ "version": 2,
  "refresh": "1m",
  "time": {
   "from": "now-7d",
@@ -410,6 +410,323 @@
    }
   },
   {
+   "id": 20,
+   "type": "row",
+   "title": "By model",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 16
+   },
+   "collapsed": false,
+   "panels": []
+  },
+  {
+   "id": 21,
+   "type": "table",
+   "title": "What each model costs, this month",
+   "description": "One row per model, from the per-run breakdown. With two tiers a plan is no longer one model's work: the roadmap is decided by one and the activities drafted by another, and this is where that shows.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "profplan-db"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 14,
+    "x": 0,
+    "y": 17
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "profplan-db"
+     },
+     "rawSql": "SELECT mu.model AS \"model\",\n       count(DISTINCT mu.generation_id) AS \"runs\",\n       sum(mu.calls) AS \"calls\",\n       sum(mu.input_tokens + mu.output_tokens) AS \"tokens\",\n       sum(mu.cost_usd)::float8 AS \"USD\",\n       round(100 * sum(mu.cost_usd) / nullif((\n           SELECT sum(cost_usd) FROM plan_generation_model_usage m2\n           JOIN plan_generation g2 ON g2.uuid = m2.generation_id\n           WHERE g2.created_at >= date_trunc('month', now())), 0), 1)::float8 AS \"% of spend\"\nFROM plan_generation_model_usage mu\nJOIN plan_generation g ON g.uuid = mu.generation_id\nWHERE g.created_at >= date_trunc('month', now())\nGROUP BY mu.model ORDER BY 5 DESC",
+     "format": "table",
+     "rawQuery": true
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "sortBy": [
+     {
+      "displayName": "USD",
+      "desc": true
+     }
+    ]
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto"
+     },
+     "mappings": []
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "USD"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "currencyUSD"
+       },
+       {
+        "id": "decimals",
+        "value": 4
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "% of spend"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "gauge"
+        }
+       },
+       {
+        "id": "max",
+        "value": 100
+       },
+       {
+        "id": "min",
+        "value": 0
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": 22,
+   "type": "piechart",
+   "title": "Share of spend by model",
+   "description": "The same numbers as the table, shaped for the question people actually ask, which is whether the expensive model is where the money is going.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "profplan-db"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 10,
+    "x": 14,
+    "y": 17
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "profplan-db"
+     },
+     "rawSql": "SELECT mu.model AS \"model\", sum(mu.cost_usd)::float8 AS \"USD\"\nFROM plan_generation_model_usage mu\nJOIN plan_generation g ON g.uuid = mu.generation_id\nWHERE g.created_at >= date_trunc('month', now())\nGROUP BY mu.model ORDER BY 2 DESC",
+     "format": "table",
+     "rawQuery": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": true
+    },
+    "pieType": "donut",
+    "legend": {
+     "displayMode": "list",
+     "placement": "right",
+     "showLegend": true,
+     "values": [
+      "percent"
+     ]
+    },
+    "tooltip": {
+     "mode": "single"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyUSD",
+     "decimals": 4,
+     "mappings": [],
+     "custom": {
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      }
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 23,
+   "type": "table",
+   "title": "How each model behaves",
+   "description": "From Prometheus rather than the database: latency and average answer length are properties of the model, not of a run. A cheap model that writes half as much is a different trade from one that is simply cheaper.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 14,
+    "x": 0,
+    "y": 26
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "instant": true,
+     "format": "table",
+     "expr": "histogram_quantile(0.5, sum by (le, model) (rate(profplan_llm_latency_seconds_bucket[1h])))",
+     "legendFormat": "{{model}}"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "instant": true,
+     "format": "table",
+     "expr": "histogram_quantile(0.95, sum by (le, model) (rate(profplan_llm_latency_seconds_bucket[1h])))",
+     "legendFormat": "{{model}}"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "instant": true,
+     "format": "table",
+     "expr": "sum by (model) (increase(profplan_llm_tokens_total{direction=\"output\"}[1h])) / sum by (model) (increase(profplan_llm_latency_seconds_count[1h]))",
+     "legendFormat": "{{model}}"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "joinByField",
+     "options": {
+      "byField": "model",
+      "mode": "outer"
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Time 1": true,
+       "Time 2": true,
+       "Time 3": true
+      },
+      "renameByName": {
+       "Value #A": "p50 (s)",
+       "Value #B": "p95 (s)",
+       "Value #C": "output tokens per call"
+      }
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto"
+     },
+     "decimals": 1,
+     "mappings": []
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 24,
+   "type": "timeseries",
+   "title": "Tokens per model, cumulative today",
+   "description": "Which model is doing the volume. With the two-tier split the drafting model should carry most of the tokens and little of the cost; if that inverts, the fast chain fell back to the expensive one.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 10,
+    "x": 14,
+    "y": 26
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model) (increase(profplan_llm_tokens_total[1h]))",
+     "legendFormat": "{{model}}",
+     "editorMode": "code",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true,
+     "calcs": []
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {},
+     "unit": "short",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
    "id": 10,
    "type": "row",
    "title": "Where the money goes",
@@ -417,7 +734,7 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 16
+    "y": 34
    },
    "collapsed": false,
    "panels": []
@@ -435,7 +752,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 17
+    "y": 35
    },
    "targets": [
     {
@@ -493,7 +810,7 @@
     "h": 8,
     "w": 12,
     "x": 12,
-    "y": 17
+    "y": 35
    },
    "targets": [
     {
@@ -551,7 +868,7 @@
     "h": 8,
     "w": 12,
     "x": 0,
-    "y": 25
+    "y": 43
    },
    "targets": [
     {
@@ -606,9 +923,9 @@
    },
    "gridPos": {
     "h": 8,
-    "w": 12,
-    "x": 12,
-    "y": 25
+    "w": 24,
+    "x": 0,
+    "y": 51
    },
    "targets": [
     {
@@ -617,7 +934,7 @@
       "type": "postgres",
       "uid": "profplan-db"
      },
-     "rawSql": "SELECT g.created_at AS \"when\", u.email AS \"account\",\n       g.llm_calls AS \"calls\",\n       g.llm_input_tokens + g.llm_output_tokens AS \"tokens\",\n       g.llm_cost_usd::float8 AS \"USD\"\nFROM plan_generation g JOIN users u ON u.uuid = g.user_id\nWHERE g.created_at >= date_trunc('month', now())\nORDER BY g.llm_cost_usd DESC LIMIT 10",
+     "rawSql": "SELECT g.created_at AS \"when\", u.email AS \"account\",\n       (SELECT string_agg(mu.model, ', ' ORDER BY mu.cost_usd DESC)\n          FROM plan_generation_model_usage mu WHERE mu.generation_id = g.uuid) AS \"models\",\n       g.llm_calls AS \"calls\",\n       g.llm_input_tokens + g.llm_output_tokens AS \"tokens\",\n       g.llm_cost_usd::float8 AS \"USD\"\nFROM plan_generation g JOIN users u ON u.uuid = g.user_id\nWHERE g.created_at >= date_trunc('month', now())\nORDER BY g.llm_cost_usd DESC LIMIT 10",
      "format": "table",
      "rawQuery": true
     }

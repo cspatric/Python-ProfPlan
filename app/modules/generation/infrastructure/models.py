@@ -17,6 +17,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     Numeric,
+    String,
     Text,
     UniqueConstraint,
     func,
@@ -121,4 +122,39 @@ class PlanDocument(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PlanGenerationModelUsage(Base):
+    """What one model contributed to one generation run.
+
+    A separate table rather than a column of JSON on the run, for one reason
+    that decides it: a dozen activity workers finish at the same time and each
+    has to add its own model's share. `INSERT ... ON CONFLICT DO UPDATE SET
+    calls = calls + excluded.calls` is atomic; merging a JSON document from
+    Python is a read-modify-write that loses most of them.
+
+    It also makes the question "what does each model cost us" a GROUP BY
+    instead of a document to parse.
+    """
+
+    __tablename__ = "plan_generation_model_usage"
+    __table_args__ = (UniqueConstraint("generation_id", "model"),)
+
+    uuid: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    generation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("plan_generation.uuid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    #: The id that was billed, profile prefix and all.
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, default=Decimal("0")
     )

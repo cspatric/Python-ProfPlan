@@ -118,8 +118,28 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana_ro;
 | Cost per plan | the number to quote when somebody asks |
 | Who is spending it | per account: runs, tokens, USD |
 | Budget used | how close each account is to being refused |
+| **What each model costs** | per model: runs, calls, tokens, USD, share of spend |
+| **Share of spend by model** | whether the expensive model is where the money goes |
+| **How each model behaves** | p50, p95 and output tokens per call, per model |
+| **Tokens per model** | which model is doing the volume |
 | Cost rate by model | why the bill changed, which is usually the model |
-| The dearest runs | one row per plan, to take into Loki |
+| The dearest runs | one row per plan, with the models that made it |
+
+The per-model figures come from `plan_generation_model_usage`, a row per model
+per run, written with an upsert that **adds**. That shape is not incidental: a
+dozen activity workers finish at the same moment and each has to add its own
+model's share, which a JSON document merged in Python would lose most of.
+
+What the split looks like in practice, on one plan:
+
+| model | calls | tokens | USD | share |
+| --- | --- | --- | --- | --- |
+| `claude-haiku-4-5` (decides) | 1 | 3.883 | 0,0135 | **84%** |
+| `amazon.nova-lite` (drafts) | 9 | 12.851 | 0,0026 | 16% |
+
+One call is 84% of the money and 23% of the tokens. That inversion is the whole
+argument for two tiers, and it is only visible because the model is recorded
+per run rather than per bill.
 
 To go from a row to the calls behind it, Explore in Loki with
 `{container="backend-worker-1"} | json | llm_cost_usd != ""`.

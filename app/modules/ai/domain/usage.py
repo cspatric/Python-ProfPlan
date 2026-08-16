@@ -55,6 +55,16 @@ class Completion:
 
 
 @dataclass(slots=True)
+class ModelUsage:
+    """What one model contributed to a unit of work."""
+
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+
+
+@dataclass(slots=True)
 class UsageLedger:
     """Running total for one unit of work, usually one plan."""
 
@@ -62,9 +72,15 @@ class UsageLedger:
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
-    #: Which models took part, in the order they first answered. Kept because
-    #: "this plan cost 4 cents" is not actionable without "on which model".
-    models: list[str] = field(default_factory=list)
+    #: Per model, in the order each first answered. A plan is no longer one
+    #: model's work: the roadmap is decided by one and the activities are
+    #: drafted by another, so "this plan cost 4 cents" without the breakdown
+    #: hides the only lever anybody can pull.
+    by_model: dict[str, ModelUsage] = field(default_factory=dict)
+
+    @property
+    def models(self) -> list[str]:
+        return list(self.by_model)
 
     def add(self, *, model: str, usage: TokenUsage | None, cost_usd: float) -> None:
         self.calls += 1
@@ -72,8 +88,13 @@ class UsageLedger:
             self.input_tokens += usage.input_tokens
             self.output_tokens += usage.output_tokens
         self.cost_usd += cost_usd
-        if model not in self.models:
-            self.models.append(model)
+
+        entry = self.by_model.setdefault(model, ModelUsage())
+        entry.calls += 1
+        if usage is not None:
+            entry.input_tokens += usage.input_tokens
+            entry.output_tokens += usage.output_tokens
+        entry.cost_usd += cost_usd
 
 
 _current: ContextVar[UsageLedger | None] = ContextVar("llm_usage_ledger", default=None)

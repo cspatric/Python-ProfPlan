@@ -495,10 +495,16 @@ services:
     profiles: ["observability"]
     restart: unless-stopped
     environment:
-      # Substituted into the provisioned datasources. Only these three, not
-      # the whole .env: a dashboard has no business holding the API keys.
+      # Substituted into the provisioned datasources. Only these, not the whole
+      # .env: a dashboard has no business holding the API keys.
       POSTGRES_DB: ${POSTGRES_DB:-profplan}
       GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:-}
+      # The admin login, as configuration. Left to Grafana's default it is
+      # admin/admin with a change-password prompt on first login, and whatever
+      # somebody sets there is then written down nowhere: the dashboards become
+      # unreachable for the next person and there is no file to look in.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     depends_on:
       prometheus:
         condition: service_healthy

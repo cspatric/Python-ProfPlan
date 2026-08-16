@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.academic_items.infrastructure.models import AcademicItem
@@ -13,7 +14,10 @@ from app.modules.generation.domain.entities import (
     GenerationItemStatus,
     GenerationRunStatus,
 )
-from app.modules.generation.infrastructure.models import PlanGeneration
+from app.modules.generation.infrastructure.models import (
+    PlanGeneration,
+    PlanGenerationModelUsage,
+)
 from app.modules.users.infrastructure.models import User
 
 
@@ -99,6 +103,39 @@ class GenerationRepository:
         """
         if ledger.calls == 0:
             return
+
+        # Per model first, as an upsert that adds. Several workers land here at
+        # the same moment, each carrying its own model's share, and adding in
+        # the database is the only way none of them is lost.
+        for model, used in ledger.by_model.items():
+            insert = pg_insert(PlanGenerationModelUsage).values(
+                generation_id=generation_id,
+                model=model[:128],
+                calls=used.calls,
+                input_tokens=used.input_tokens,
+                output_tokens=used.output_tokens,
+                cost_usd=Decimal(str(used.cost_usd)),
+            )
+            await self._session.execute(
+                insert.on_conflict_do_update(
+                    index_elements=["generation_id", "model"],
+                    set_={
+                        "calls": PlanGenerationModelUsage.calls + insert.excluded.calls,
+                        "input_tokens": (
+                            PlanGenerationModelUsage.input_tokens
+                            + insert.excluded.input_tokens
+                        ),
+                        "output_tokens": (
+                            PlanGenerationModelUsage.output_tokens
+                            + insert.excluded.output_tokens
+                        ),
+                        "cost_usd": (
+                            PlanGenerationModelUsage.cost_usd + insert.excluded.cost_usd
+                        ),
+                    },
+                )
+            )
+
         await self._session.execute(
             update(PlanGeneration)
             .where(PlanGeneration.uuid == generation_id)
