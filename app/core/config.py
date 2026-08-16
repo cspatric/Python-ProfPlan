@@ -165,6 +165,18 @@ class Settings(BaseSettings):
     # Cosine distance (lower is closer) above which the closest retrieved chunk
     # is too far from the request to have grounded the plan — worth a judge.
     planner_weak_context_distance: float = 0.45
+
+    # Hybrid retrieval: a word search alongside the vector one, fused by rank.
+    # A switch rather than a rewrite, so the two can be compared on the same
+    # corpus (scripts/eval_retrieval.py) instead of argued about.
+    rag_hybrid_search: bool = True
+    #: How many candidates each half contributes before fusion. Larger than the
+    #: limit on purpose: fusion can only promote what one of the lists returned.
+    rag_candidate_pool: int = 30
+    #: The flattening constant in reciprocal rank fusion. 60 is the value from
+    #: the original paper and it is not sensitive; it only has to be large
+    #: enough that rank 1 does not swamp agreement between the lists.
+    rag_rrf_k: int = 60
     llm_circuit_failure_threshold: int = 3
     llm_circuit_reset_seconds: float = 30.0
     # Caps concurrent outbound calls process-wide so a burst of /ai/ask

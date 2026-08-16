@@ -18,9 +18,11 @@ class FakeEmbedder:
 class FakeSearch:
     def __init__(self) -> None:
         self.last_content_ids: list[UUID] | None = None
+        self.last_query_text: str | None = None
 
-    async def search(self, *, query_embedding, limit, content_ids):
+    async def search(self, *, query_embedding, limit, content_ids, query_text=None):
         self.last_content_ids = list(content_ids) if content_ids else None
+        self.last_query_text = query_text
         return [
             SearchResult(
                 chunk_id=str(uuid4()),
@@ -59,3 +61,16 @@ async def test_query_without_any_content_returns_empty() -> None:
 
     assert results == []
     assert embedder.calls == []  # no embedding call when nothing to search
+
+
+async def test_the_words_reach_the_search_not_only_their_embedding() -> None:
+    """The lexical half of a hybrid search needs the text itself. Dropping it
+    here would leave the feature switched on and doing nothing, which is worse
+    than switched off: nobody would look."""
+    content_id = uuid4()
+    search = FakeSearch()
+    service = RetrievalService(FakeEmbedder(), search, FakeContents([content_id]))
+
+    await service.query(user_id=uuid4(), query="van Helmont willow experiment")
+
+    assert search.last_query_text == "van Helmont willow experiment"

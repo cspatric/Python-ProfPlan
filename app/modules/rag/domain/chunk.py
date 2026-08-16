@@ -21,6 +21,24 @@ class SearchResult:
     document_content_id: str
     content: str
     distance: float
+    #: 1-based position in each half of the hybrid search, None when that half
+    #: did not return this chunk. Both None means the plain vector search ran.
+    vector_rank: int | None = None
+    lexical_rank: int | None = None
+
+    @property
+    def matched_by(self) -> str:
+        """How this passage was found: by meaning, by words, or by both.
+
+        Worth keeping rather than deriving later: "both" is the strongest
+        signal the retrieval produces, and it is the only evidence that the
+        lexical half is earning its place.
+        """
+        if self.vector_rank is not None and self.lexical_rank is not None:
+            return "both"
+        if self.lexical_rank is not None:
+            return "keyword"
+        return "semantic"
 
     @property
     def section(self) -> str | None:

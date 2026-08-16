@@ -1,0 +1,89 @@
+{
+  "note": "Questions a teacher would actually ask of the Biology 201 notes. Half are conceptual, where meaning is what matters, and half turn on a name, a number or an acronym, where it is the word itself. A set of only one kind proves whichever half of the search it was written for. The second content id is 40 sections of neighbouring topics sharing the same vocabulary: without decoys a 12-chunk corpus makes every retrieval look perfect.",
+  "content_ids": [
+    "0630ad29-1b2e-439a-9c43-9e54a44c9301",
+    "1abcb949-eb53-4443-be29-4651e87da50a"
+  ],
+  "questions": [
+    {
+      "question": "how do plants turn light into chemical energy",
+      "expect": "photosystem II absorbs a photon"
+    },
+    {
+      "question": "where is carbon dioxide turned into sugar",
+      "expect": "Calvin cycle fixes carbon dioxide"
+    },
+    {
+      "question": "how do plants in hot dry places avoid wasting energy",
+      "expect": "bundle sheath cells"
+    },
+    {
+      "question": "what happens to glucose when there is no oxygen",
+      "expect": "yeast converts pyruvate into ethanol"
+    },
+    {
+      "question": "why do we think mitochondria used to be bacteria",
+      "expect": "endosymbiotic theory"
+    },
+    {
+      "question": "what do students usually get wrong about plants",
+      "expect": "take their mass from the soil"
+    },
+    {
+      "question": "how is this module graded",
+      "expect": "written examination of 90 minutes"
+    },
+    {
+      "question": "van Helmont willow experiment",
+      "expect": "willow for five years"
+    },
+    {
+      "question": "RuBisCO",
+      "expect": "RuBisCO, the most abundant enzyme"
+    },
+    {
+      "question": "Ingenhousz 1779",
+      "expect": "Ingenhousz demonstrated in 1779"
+    },
+    {
+      "question": "Krebs cycle FADH2 yield",
+      "expect": "three NADH, one FADH2"
+    },
+    {
+      "question": "cyanide complex IV",
+      "expect": "Cyanide blocks complex IV"
+    },
+    {
+      "question": "Lynn Margulis 1967",
+      "expect": "Lynn Margulis in 1967"
+    },
+    {
+      "question": "net ATP from glycolysis",
+      "expect": "net yield of two ATP"
+    },
+    {
+      "question": "Elodea bubble counting report weight",
+      "expect": "Elodea bubble-counting experiment"
+    },
+    {
+      "question": "photosystem II 680 nm",
+      "expect": "photon at 680 nm"
+    },
+    {
+      "question": "what stops water from breaking as it rises in a tree",
+      "expect": "cohesion tension theory"
+    },
+    {
+      "question": "Okazaki fragments",
+      "expect": "Okazaki fragments"
+    },
+    {
+      "question": "why are food chains short",
+      "expect": "ten per cent of the energy"
+    },
+    {
+      "question": "nodes of Ranvier saltatory",
+      "expect": "nodes of Ranvier"
+    }
+  ]
+}

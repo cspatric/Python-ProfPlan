@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,6 +34,8 @@ class Chunk(Base):
     __table_args__ = (
         UniqueConstraint("document_content_id", "chunk_index"),
         # Approximate nearest-neighbour index for cosine similarity search.
+        # Lexical index, the other half of hybrid search.
+        Index("ix_chunks_content_tsv", "content_tsv", postgresql_using="gin"),
         Index(
             "ix_chunks_embedding",
             "embedding",
@@ -52,6 +56,12 @@ class Chunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int | None] = mapped_column(Integer)
+    #: Lexical index of `content`, maintained by Postgres itself (GENERATED
+    #: ALWAYS), so a chunk cannot exist without being searchable by word. Never
+    #: written from here; see the migration for why the config is `english`.
+    content_tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR, Computed("to_tsvector('english', content)", persisted=True)
+    )
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

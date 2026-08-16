@@ -46,5 +46,10 @@ class RetrievalService:
             return []
         embedding = await self._embedder.embed_text(query)
         return await self._search.search(
-            query_embedding=embedding, limit=limit, content_ids=content_ids
+            query_embedding=embedding,
+            limit=limit,
+            content_ids=content_ids,
+            # The words themselves, not only their embedding: the lexical half
+            # of the search needs the text.
+            query_text=query,
         )

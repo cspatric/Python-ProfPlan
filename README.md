@@ -372,6 +372,20 @@ what CI uses. Pointing it at a real server is four environment variables and
 one command to prove it works, both in
 [`docs/deployment/EMAIL.md`](docs/deployment/EMAIL.md).
 
+## Retrieval
+
+Two searches run over the teacher's documents and their rankings are fused with
+reciprocal rank fusion: a vector search for meaning, and a Postgres full-text
+search for the tokens that carry no meaning to average, a surname, an acronym,
+a year. They fail in different places, which is the only good reason to run
+both.
+
+It is measured rather than asserted: `scripts/seed_eval_corpus.py` plants a
+corpus that lives in the repository and `scripts/eval_retrieval.py` scores
+every mode on the same 20 questions. Hybrid 0,85 recall@1 against 0,80 for the
+vector search alone, and the per-question table shows the one question fusion
+made worse. See [`docs/rag/RETRIEVAL.md`](docs/rag/RETRIEVAL.md).
+
 ## Where an activity came from
 
 Every generated activity records the passages it was written from: the excerpt
