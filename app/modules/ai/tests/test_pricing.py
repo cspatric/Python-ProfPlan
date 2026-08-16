@@ -59,9 +59,12 @@ def test_case_and_padding_do_not_change_the_price():
 # --------------------------------------------------------------------------- #
 
 
-def test_a_bedrock_sonnet_costs_the_same_as_a_direct_one():
-    """For the 4.x family, where the two really do list at the same price."""
-    assert cost_usd("anthropic.claude-sonnet-4-6", MILLION) == 18.0
+def test_a_bedrock_model_costs_10_percent_more_than_the_direct_one():
+    """Bedrock quotes a regional rate and a global one, and a `us.` inference
+    profile, which is what this application uses, is billed at the regional
+    one. Read off the rate cards, not remembered."""
+    assert cost_usd("claude-sonnet-4-6", MILLION) == 18.0
+    assert cost_usd("anthropic.claude-sonnet-4-6", MILLION) == 19.80
 
 
 def test_the_routing_prefix_does_not_change_the_price():
@@ -73,15 +76,21 @@ def test_the_routing_prefix_does_not_change_the_price():
         "global.anthropic.claude-sonnet-4-6",
         "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
     ):
-        assert cost_usd(model, MILLION) == 18.0
+        assert cost_usd(model, MILLION) == 19.80
 
 
 def test_a_bedrock_opus_is_not_priced_as_a_sonnet():
-    assert cost_usd("us.anthropic.claude-opus-4-1", MILLION) == 90.0
+    assert cost_usd("us.anthropic.claude-opus-4-1", MILLION) == 99.0
+
+
+def test_haiku_is_priced_from_its_own_rate_card():
+    """1.10 and 5.50 per million in us-east-1, read with
+    ListFoundationModelAgreementOffers."""
+    assert cost_usd("us.anthropic.claude-haiku-4-5-20251001-v1:0", MILLION) == 6.60
 
 
 def test_sonnet_5_is_not_priced_like_the_4_x_family():
     """From the rate card on the model's own Bedrock agreement offer, not from
     memory: 2.20 in and 11.00 out per million, against 3 and 15 for 4.x."""
     assert cost_usd("us.anthropic.claude-sonnet-5", MILLION) == 13.20
-    assert cost_usd("anthropic.claude-sonnet-4-6", MILLION) == 18.00
+    assert cost_usd("anthropic.claude-sonnet-4-6", MILLION) == 19.80

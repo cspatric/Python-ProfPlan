@@ -193,15 +193,27 @@ billed), and its model ids are in the price table, with the `us.` / `global.`
 routing prefix stripped first because it decides which region serves the
 request, not what it costs.
 
-The number worth staring at, one plan of the same shape:
+The number worth staring at, one plan of the same shape on each model:
 
-| model | calls | tokens | USD |
-| --- | --- | --- | --- |
-| `gemini-flash-lite-latest` | 10 | 20.235 | **0,0069** |
-| `us.anthropic.claude-sonnet-4-6` (Bedrock) | 11 | 57.120 | **0,7899** |
+| model | calls | tokens | USD | plans per teacher at the 5 USD cap |
+| --- | --- | --- | --- | --- |
+| `gemini-flash-lite-latest` | 10 | 20.235 | **0,0069** | ~700 |
+| `us.anthropic.claude-haiku-4-5` (Bedrock) | 8 | 23.257 | **0,1103** | ~45 |
+| `us.anthropic.claude-sonnet-4-6` (Bedrock) | 11 | 57.120 | **0,7899** | ~6 |
 
-A hundred and fifteen times more, and it is not only the price per token: the
-better model writes far more. At the default 5 USD monthly cap that is about
-**six plans per teacher per month** on Sonnet, against roughly seven hundred on
-the cheap model. Which of those is right is a product decision, and it is the
-one this page exists to let somebody make with a number in front of them.
+Two things the table says that a price list does not. The gap between the ends
+is a hundred and fifteen times, and it is not only the price per token: the
+better model writes far more, 57 thousand tokens against 20 thousand for the
+same plan. And Haiku sits at a seventh of Sonnet while still being Claude,
+which is the trade most deployments actually want.
+
+Which one is right is a product decision. This page exists so that it can be
+made with the numbers in front of somebody instead of from a feeling about
+model names.
+
+**On which model, and where.** Anthropic's generation 5 (Sonnet 5, Opus 5) is
+not available to every account: the error is
+`not available for this account ... contact AWS Sales`, and it is neither the
+inference profile nor the agreement, since Haiku 4.5 and Opus 4.5 answer with
+their agreements equally `NOT_AVAILABLE`. It is an account-level entitlement
+and the route is an AWS Support case, not a console button.

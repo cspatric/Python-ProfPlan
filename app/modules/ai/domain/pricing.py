@@ -39,19 +39,25 @@ PRICES_USD_PER_MILLION: dict[str, tuple[float, float]] = {
     "claude-opus": (15.00, 75.00),
     "claude-sonnet": (3.00, 15.00),
     "claude-haiku": (1.00, 5.00),
-    # Anthropic, through Bedrock. Same list price, different id: Bedrock keeps
-    # the vendor in the model name, and the routing prefix is stripped before
-    # this table is consulted.
-    "anthropic.claude-opus": (15.00, 75.00),
-    "anthropic.claude-sonnet": (3.00, 15.00),
-    "anthropic.claude-haiku": (1.00, 5.00),
-    # Sonnet 5 is not priced like the 4.x family, and this is not from memory:
-    # it is the rate card on the model's own agreement offer, read with
-    # ListFoundationModelAgreementOffers. us-east-1 on demand is 2.20 and
-    # 11.00; through the *global* profile it is 2.00 and 10.00. The routing
-    # prefix is stripped before this table is read, so the dearer of the two is
-    # quoted, which errs toward over-reporting. For a cost report that is the
-    # right direction to be wrong in.
+    # Anthropic, through Bedrock. Not the same numbers as the direct API, for
+    # two reasons that both surfaced by reading rate cards rather than
+    # remembering prices.
+    #
+    # 1. Bedrock quotes a *regional* rate and a *global* one, and the regional
+    #    is 10% dearer. A `us.` inference profile, which is what this
+    #    application uses, is billed at the regional rate. Measured on the two
+    #    models whose rate cards could be read: Sonnet 5 at 2.20/11.00 against
+    #    2.00/10.00 global, Haiku 4.5 at 1.10/5.50 against 1.00/5.00.
+    # 2. An offer, and therefore its rate card, only lists while the agreement
+    #    is not yet established. For the models already agreed, the +10% is
+    #    applied from that pattern rather than read, and it errs high on
+    #    purpose: for a cost report, over-reporting is the safe direction.
+    "anthropic.claude-opus": (16.50, 82.50),
+    "anthropic.claude-sonnet": (3.30, 16.50),
+    "anthropic.claude-haiku": (1.10, 5.50),
+    # Sonnet 5 is not priced like the 4.x family, and this is read rather than
+    # recalled: it is the rate card on the model's own agreement offer, via
+    # ListFoundationModelAgreementOffers.
     "anthropic.claude-sonnet-5": (2.20, 11.00),
     # Other Bedrock families, so a fallback to one of them is not silently
     # unpriced.
