@@ -4,6 +4,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.modules.ai.domain.exceptions import ProviderUnavailableError
+from app.modules.ai.domain.tiers import Tier
 from app.modules.ai.domain.usage import Completion, TokenUsage
 from app.modules.ai.infrastructure.providers.base import HTTPLLMProvider
 
@@ -20,13 +21,21 @@ class ClaudeProvider(HTTPLLMProvider):
         super().__init__(timeout=settings.llm_timeout_seconds)
         self._api_key = settings.anthropic_api_key
         self._model = settings.anthropic_model
+        self._fast_model = settings.anthropic_fast_model
         self._max_tokens = settings.llm_max_tokens
 
-    async def generate(self, prompt: str, *, system: str | None = None) -> Completion:
+    async def generate(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        tier: Tier = Tier.STANDARD,
+    ) -> Completion:
+        model = self._model_for(tier)
         if not self._api_key:
             raise ProviderUnavailableError("Anthropic API key not configured")
         payload: dict[str, Any] = {
-            "model": self._model,
+            "model": model,
             "max_tokens": self._max_tokens,
             "messages": [{"role": "user", "content": prompt}],
         }
@@ -46,7 +55,7 @@ class ClaudeProvider(HTTPLLMProvider):
             text=data["content"][0]["text"],
             # What answered, not what was asked for: Anthropic resolves an
             # alias to a dated model, and the dated one is what was billed.
-            model=data.get("model") or self._model,
+            model=data.get("model") or model,
             usage=TokenUsage(
                 input_tokens=usage.get("input_tokens", 0),
                 output_tokens=usage.get("output_tokens", 0),

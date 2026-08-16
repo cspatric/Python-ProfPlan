@@ -4,6 +4,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.modules.ai.domain.exceptions import ProviderUnavailableError
+from app.modules.ai.domain.tiers import Tier
 from app.modules.ai.domain.usage import Completion, TokenUsage
 from app.modules.ai.infrastructure.providers.base import HTTPLLMProvider
 
@@ -20,9 +21,17 @@ class GeminiProvider(HTTPLLMProvider):
         super().__init__(timeout=settings.llm_timeout_seconds)
         self._api_key = settings.gemini_api_key
         self._model = settings.gemini_model
+        self._fast_model = settings.gemini_fast_model
         self._max_tokens = settings.llm_max_tokens
 
-    async def generate(self, prompt: str, *, system: str | None = None) -> Completion:
+    async def generate(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        tier: Tier = Tier.STANDARD,
+    ) -> Completion:
+        model = self._model_for(tier)
         if not self._api_key:
             raise ProviderUnavailableError("Gemini API key not configured")
 
@@ -37,7 +46,7 @@ class GeminiProvider(HTTPLLMProvider):
             body["system_instruction"] = {"parts": [{"text": system}]}
 
         data = await self._post(
-            f"{_BASE}/{self._model}:generateContent?key={self._api_key}",
+            f"{_BASE}/{model}:generateContent?key={self._api_key}",
             headers={"content-type": "application/json"},
             json=body,
         )
@@ -57,7 +66,7 @@ class GeminiProvider(HTTPLLMProvider):
         meta = data.get("usageMetadata") or {}
         return Completion(
             text=text,
-            model=self._model,
+            model=model,
             usage=TokenUsage(
                 input_tokens=meta.get("promptTokenCount", 0),
                 # Thinking tokens are billed as output and are reported apart,

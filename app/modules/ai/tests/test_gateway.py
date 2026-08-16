@@ -6,6 +6,7 @@ from app.modules.ai.domain.exceptions import (
     AllProvidersFailedError,
     ProviderUnavailableError,
 )
+from app.modules.ai.domain.tiers import Tier
 from app.modules.ai.domain.usage import Completion, TokenUsage, usage_scope
 from app.modules.ai.infrastructure.gateway.circuit_breaker import CircuitBreaker
 from app.modules.ai.infrastructure.gateway.llm_gateway import LLMGateway
@@ -19,20 +20,33 @@ class FakeProvider:
         text: str | None = None,
         error: Exception | None = None,
         model: str = "claude-sonnet-5",
+        fast_model: str = "",
         usage: TokenUsage | None = None,
     ) -> None:
         self.name = name
         self._text = text
         self._error = error
         self._model = model
+        self._fast_model = fast_model
         self._usage = usage or TokenUsage(input_tokens=1000, output_tokens=500)
         self.calls = 0
+        self.tiers: list[Tier] = []
 
-    async def generate(self, prompt: str, *, system: str | None = None) -> Completion:
+    async def generate(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        tier: Tier = Tier.STANDARD,
+    ) -> Completion:
         self.calls += 1
+        self.tiers.append(tier)
         if self._error is not None:
             raise self._error
-        return Completion(text=self._text or "", model=self._model, usage=self._usage)
+        model = (
+            self._fast_model if tier is Tier.FAST and self._fast_model else self._model
+        )
+        return Completion(text=self._text or "", model=model, usage=self._usage)
 
 
 class FakeRedis:
@@ -183,3 +197,72 @@ async def test_a_failed_provider_costs_nothing_and_the_fallback_is_billed():
     assert ledger.calls == 1
     assert ledger.cost_usd == 0.0
     assert ledger.models == ["llama3.2:3b"]
+
+
+# --------------------------------------------------------------------------- #
+# Two chains: the call that decides something, and the bulk that follows it.
+# --------------------------------------------------------------------------- #
+
+
+def _tiered(*providers: FakeProvider, standard: tuple[str, ...], fast: tuple[str, ...]):
+    return LLMGateway(
+        [(p, _breaker(p.name)) for p in providers],
+        max_concurrency=5,
+        chains={Tier.STANDARD: standard, Tier.FAST: fast},
+    )
+
+
+async def test_each_tier_goes_to_its_own_chain_first():
+    """The whole point: the roadmap is decided by one provider and the
+    activities are drafted by another, without either being a fallback."""
+    expensive = FakeProvider("claude", text="roadmap")
+    cheap = FakeProvider("gemini", text="activity")
+    gateway = _tiered(
+        expensive, cheap, standard=("claude", "gemini"), fast=("gemini", "claude")
+    )
+
+    standard = await gateway.generate("plan this")
+    fast = await gateway.generate("write this", tier=Tier.FAST)
+
+    assert standard.provider == "claude"
+    assert fast.provider == "gemini"
+
+
+async def test_a_tier_still_falls_back_within_its_own_chain():
+    failing = FakeProvider("gemini", error=ProviderUnavailableError("no key"))
+    working = FakeProvider("ollama", text="ok")
+    gateway = _tiered(failing, working, standard=("gemini",), fast=("gemini", "ollama"))
+
+    result = await gateway.generate("write this", tier=Tier.FAST)
+
+    assert result.provider == "ollama"
+
+
+async def test_the_tier_reaches_the_provider():
+    """Because a provider's cheap model is chosen there, not here."""
+    provider = FakeProvider("gemini", text="ok", model="big", fast_model="small")
+    gateway = _tiered(provider, standard=("gemini",), fast=("gemini",))
+
+    assert (await gateway.generate("x")).model == "big"
+    assert (await gateway.generate("x", tier=Tier.FAST)).model == "small"
+    assert provider.tiers == [Tier.STANDARD, Tier.FAST]
+
+
+async def test_a_provider_missing_from_a_chain_is_not_used_for_that_tier():
+    """A cheap chain that reaches an expensive provider by accident is the
+    failure this exists to prevent."""
+    expensive = FakeProvider("claude", text="expensive")
+    cheap = FakeProvider("gemini", error=ProviderUnavailableError("down"))
+    gateway = _tiered(cheap, expensive, standard=("claude",), fast=("gemini",))
+
+    with pytest.raises(AllProvidersFailedError):
+        await gateway.generate("write this", tier=Tier.FAST)
+    assert expensive.calls == 0
+
+
+async def test_an_unknown_name_in_a_chain_is_ignored_rather_than_fatal():
+    """A typo in one chain must not take the gateway down."""
+    provider = FakeProvider("gemini", text="ok")
+    gateway = _tiered(provider, standard=("gemini",), fast=("gemnini", "gemini"))
+
+    assert (await gateway.generate("x", tier=Tier.FAST)).provider == "gemini"

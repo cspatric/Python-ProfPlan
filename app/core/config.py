@@ -147,6 +147,7 @@ class Settings(BaseSettings):
     # LLM gateway (fallback chain: Claude -> OpenAI -> Gemini -> Ollama)
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-5"
+    anthropic_fast_model: str = "claude-haiku-4-5"
 
     # Amazon Bedrock, authenticated with a Bedrock API key rather than SigV4:
     # one bearer header, no boto3 and no credential chain. The model id must
@@ -156,11 +157,17 @@ class Settings(BaseSettings):
     bedrock_api_key: str = ""
     bedrock_region: str = "us-east-1"
     bedrock_model: str = "us.anthropic.claude-sonnet-5"
+    #: The model this provider answers a FAST call with. Empty means it has
+    #: only one model and uses it for everything.
+    bedrock_fast_model: str = "us.amazon.nova-lite-v1:0"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
+    openai_fast_model: str = "gpt-4o-mini"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
+    gemini_fast_model: str = "gemini-flash-lite-latest"
     ollama_chat_model: str = "llama3.2:3b"
+    ollama_fast_model: str = ""
     llm_max_tokens: int = 2048
     llm_timeout_seconds: float = 60.0
     # Auto-generate a plan with AI when it is created (planner + fan-out). When
@@ -183,6 +190,13 @@ class Settings(BaseSettings):
     # the rate limits cap requests per minute, which is a different thing,
     # and a request per minute on an expensive model is still a bill.
     llm_monthly_budget_usd: float = 5.0
+
+    # Which providers answer which class of call, in order. Two chains rather
+    # than one, because the cheap tier is not simply the same chain with a
+    # smaller model: the provider that is best at bulk drafting for the money
+    # is not necessarily the one that should decide a roadmap.
+    llm_standard_chain: str = "claude,bedrock,openai,gemini,ollama"
+    llm_fast_chain: str = "gemini,bedrock,openai,ollama"
 
     rag_hybrid_search: bool = True
     #: How many candidates each half contributes before fusion. Larger than the

@@ -13,6 +13,7 @@ from app.modules.academic_items.infrastructure.models import AcademicItem
 from app.modules.academic_items.infrastructure.source_repository import (
     AcademicItemSourceRepository,
 )
+from app.modules.ai.domain.tiers import Tier
 from app.modules.ai.domain.usage import usage_scope
 from app.modules.ai.infrastructure.gateway.llm_gateway import LLMGateway
 from app.modules.ai.infrastructure.repository import AiProviderRepository
@@ -549,8 +550,12 @@ class GenerationService:
         )
         disabled = await self._providers.disabled_names()
         with usage_scope() as ledger:
+            # The fast tier: this is drafting against a roadmap that is already
+            # decided, and it is where the tokens are, one call per activity
+            # with a long answer. The roadmap itself, which decides what all of
+            # them are about, stays on the standard tier.
             result = await self._gateway.generate(
-                prompt, system=GENERATOR_SYSTEM, disabled=disabled
+                prompt, system=GENERATOR_SYSTEM, disabled=disabled, tier=Tier.FAST
             )
 
         item.content = {"markdown": result.text, "provider": result.provider}

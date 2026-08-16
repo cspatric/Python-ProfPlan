@@ -4,6 +4,7 @@ from typing import Any
 
 import httpx
 
+from app.modules.ai.domain.tiers import Tier
 from app.shared.decorators.retry import external_call
 
 
@@ -14,6 +15,20 @@ class HTTPLLMProvider:
 
     def __init__(self, timeout: float) -> None:
         self._timeout = timeout
+        # Subclasses set these; declared here so `_model_for` can rely on them.
+        self._model = ""
+        self._fast_model = ""
+
+    def _model_for(self, tier: Tier) -> str:
+        """The model this provider answers a call of this tier with.
+
+        A provider with no cheap model configured answers everything with its
+        one model. That is deliberate: falling back to the expensive model is a
+        larger bill, and falling back to nothing is a plan that never arrives.
+        """
+        if tier is Tier.FAST and self._fast_model:
+            return self._fast_model
+        return self._model
 
     @external_call()
     async def _post(

@@ -24,6 +24,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.modules.ai.domain.exceptions import ProviderUnavailableError
+from app.modules.ai.domain.tiers import Tier
 from app.modules.ai.domain.usage import Completion, TokenUsage
 from app.modules.ai.infrastructure.providers.base import HTTPLLMProvider
 
@@ -39,16 +40,23 @@ class BedrockProvider(HTTPLLMProvider):
         self._api_key = settings.bedrock_api_key
         self._region = settings.bedrock_region
         self._model = settings.bedrock_model
+        self._fast_model = settings.bedrock_fast_model
         self._max_tokens = settings.llm_max_tokens
 
-    @property
-    def _endpoint(self) -> str:
+    def _endpoint(self, model: str) -> str:
         return (
             f"https://bedrock-runtime.{self._region}.amazonaws.com"
-            f"/model/{self._model}/converse"
+            f"/model/{model}/converse"
         )
 
-    async def generate(self, prompt: str, *, system: str | None = None) -> Completion:
+    async def generate(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        tier: Tier = Tier.STANDARD,
+    ) -> Completion:
+        model = self._model_for(tier)
         if not self._api_key:
             raise ProviderUnavailableError("Bedrock API key not configured")
 
@@ -66,7 +74,7 @@ class BedrockProvider(HTTPLLMProvider):
             body["system"] = [{"text": system}]
 
         data = await self._post(
-            self._endpoint,
+            self._endpoint(model),
             headers={
                 "Authorization": f"Bearer {self._api_key}",
                 "content-type": "application/json",
@@ -88,8 +96,8 @@ class BedrockProvider(HTTPLLMProvider):
         return Completion(
             text=text,
             # Converse does not echo the model, and the profile id is what was
-            # billed, so the configured id is the honest answer.
-            model=self._model,
+            # billed, so the id that was called is the honest answer.
+            model=model,
             usage=TokenUsage(
                 # Cache reads and writes are billed differently and are
                 # reported apart. They are added in rather than dropped:

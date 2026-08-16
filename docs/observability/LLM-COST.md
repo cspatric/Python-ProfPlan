@@ -211,6 +211,32 @@ Which one is right is a product decision. This page exists so that it can be
 made with the numbers in front of somebody instead of from a feeling about
 model names.
 
+### Two tiers, and what the cheap one costs in substance
+
+One plan is not one kind of work. The roadmap is a single call that decides
+what all the activities will be about; a bad roadmap makes eight good
+activities about the wrong things. Writing one activity is bulk drafting
+against a decision already made, and it is where the tokens are.
+
+So there are two chains (`LLM_STANDARD_CHAIN`, `LLM_FAST_CHAIN`) and each
+provider may carry a cheap model of its own (`*_FAST_MODEL`). Measured on the
+same subject:
+
+| strategy | calls | tokens | USD | chars per activity | headings per activity |
+| --- | --- | --- | --- | --- | --- |
+| everything on Haiku 4.5 | 8 | 23.257 | 0,1103 | 7.965 | 55,7 |
+| Haiku decides, Nova Lite writes | 7 | 10.644 | **0,0125** | 3.391 | 23,7 |
+
+**Nine times cheaper, and less than half the material.** That second number is
+the one a price table cannot tell you: the activities the cheap model wrote are
+coherent, structured and in good Portuguese, and they are thinner. Whether that
+is a saving or a downgrade is a judgement about the product, not about the
+bill, and it is why both numbers are here.
+
+The knob is per provider, so the split can be moved without touching code: a
+deployment that finds Nova Lite too thin can set `BEDROCK_FAST_MODEL` to Haiku
+and keep the two-chain structure for the day a cheaper model is good enough.
+
 **On which model, and where.** Anthropic's generation 5 (Sonnet 5, Opus 5) is
 not available to every account: the error is
 `not available for this account ... contact AWS Sales`, and it is neither the

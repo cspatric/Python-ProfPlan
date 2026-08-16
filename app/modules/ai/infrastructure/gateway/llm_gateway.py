@@ -1,9 +1,15 @@
 """LLM gateway: try providers in order with per-provider circuit breakers.
 
-Fallback chain: Claude → Bedrock → OpenAI → Gemini → Ollama. Anthropic direct
-comes before Anthropic through Bedrock because it is the same model for less
-plumbing; Bedrock sits second because it is the one with an enterprise contract
-behind it, and both are ahead of the cheaper models. Each provider
+There are two chains, one per tier (see ``domain/tiers.py``). The standard one
+answers the calls that decide something, the roadmap and its judge; the fast one
+answers the bulk, one activity at a time, which is where the tokens are. Two
+chains rather than one chain with a smaller model, because the provider that is
+best at bulk drafting for the money is not necessarily the one that should
+decide a roadmap.
+
+A provider named in a chain but with no cheap model of its own answers with its
+only model. Falling back to the expensive model is a larger bill; falling back
+to nothing is a plan that never arrives. Each provider
 is wrapped in a circuit breaker; a provider that is unavailable or fails (after
 its own transient-error retries) is skipped and the next one is tried. If all
 fail, ``AllProvidersFailedError`` is raised.
@@ -29,6 +35,7 @@ from app.infrastructure.telemetry.metrics import (
 from app.modules.ai.domain.exceptions import AllProvidersFailedError
 from app.modules.ai.domain.interfaces import LLMProvider
 from app.modules.ai.domain.pricing import cost_usd
+from app.modules.ai.domain.tiers import Tier
 from app.modules.ai.domain.usage import TokenUsage, record
 from app.modules.ai.infrastructure.gateway.circuit_breaker import CircuitBreaker
 from app.modules.ai.infrastructure.providers.bedrock import BedrockProvider
@@ -62,12 +69,27 @@ class LLMGateway:
         providers: list[tuple[LLMProvider, CircuitBreaker]],
         *,
         max_concurrency: int,
+        chains: dict[Tier, tuple[str, ...]] | None = None,
     ) -> None:
         self._providers = providers
+        # Which providers answer which tier, in order. An unknown name in the
+        # configuration is dropped rather than raised on: a typo in one chain
+        # must not take the whole gateway down, and the name that vanished is
+        # visible in /ai/health.
+        self._chains = chains or {}
         # Caps concurrent outbound calls process-wide: a burst of requests
         # queues here instead of each holding a DB connection open through an
         # unbounded number of simultaneous provider fallback chains.
         self._semaphore = asyncio.Semaphore(max_concurrency)
+
+    def _chain_for(self, tier: Tier) -> list[tuple[LLMProvider, CircuitBreaker]]:
+        order = self._chains.get(tier)
+        if not order:
+            return self._providers
+        by_name = {
+            provider.name: pair for pair in self._providers for provider, _ in [pair]
+        }
+        return [by_name[name] for name in order if name in by_name]
 
     async def generate(
         self,
@@ -75,6 +97,7 @@ class LLMGateway:
         *,
         system: str | None = None,
         disabled: AbstractSet[str] = frozenset(),
+        tier: Tier = Tier.STANDARD,
     ) -> LLMResult:
         """Return the first provider's completion, falling back on failure.
 
@@ -84,7 +107,7 @@ class LLMGateway:
         """
         async with self._semaphore:
             errors: dict[str, str] = {}
-            for provider, breaker in self._providers:
+            for provider, breaker in self._chain_for(tier):
                 if provider.name in disabled:
                     errors[provider.name] = "disabled"
                     LLM_REQUESTS.labels(provider.name, "disabled").inc()
@@ -95,7 +118,9 @@ class LLMGateway:
                     continue
                 started = time.perf_counter()
                 try:
-                    completion = await provider.generate(prompt, system=system)
+                    completion = await provider.generate(
+                        prompt, system=system, tier=tier
+                    )
                 except Exception as exc:  # noqa: BLE001 — any failure → next provider
                     await breaker.record_failure()
                     errors[provider.name] = type(exc).__name__
@@ -195,7 +220,18 @@ def build_gateway(redis) -> LLMGateway:
         (gemini, _breaker(gemini.name)),
         (ollama, _breaker(ollama.name)),
     ]
-    return LLMGateway(providers, max_concurrency=settings.llm_max_concurrency)
+
+    def _chain(raw: str) -> tuple[str, ...]:
+        return tuple(name.strip() for name in raw.split(",") if name.strip())
+
+    return LLMGateway(
+        providers,
+        max_concurrency=settings.llm_max_concurrency,
+        chains={
+            Tier.STANDARD: _chain(settings.llm_standard_chain),
+            Tier.FAST: _chain(settings.llm_fast_chain),
+        },
+    )
 
 
 @lru_cache
