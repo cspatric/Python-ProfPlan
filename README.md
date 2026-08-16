@@ -372,6 +372,21 @@ what CI uses. Pointing it at a real server is four environment variables and
 one command to prove it works, both in
 [`docs/deployment/EMAIL.md`](docs/deployment/EMAIL.md).
 
+## The AI budget
+
+`LLM_MONTHLY_BUDGET_USD` caps what one account may spend in a calendar month
+(5 by default, 0 turns it off). It is checked at the door of a generation, not
+per call: a run that started finishes, because stopping halfway costs the
+tokens already spent and delivers nothing. Over the cap the answer is **402**,
+with the date it resets, since a client retrying a 429 would be doing the wrong
+thing.
+
+`GET /usage/me` shows an account its own spend and what is left; `GET /usage`
+(admin) ranks every account. The Grafana dashboard **ProfPlan / AI cost** puts
+the same numbers on a screen, reading the database through a read-only role,
+because a per-user label on a Prometheus counter is an unbounded number of time
+series. Both in [`docs/observability/LLM-COST.md`](docs/observability/LLM-COST.md).
+
 ## Retrieval
 
 Two searches run over the teacher's documents and their rankings are fused with

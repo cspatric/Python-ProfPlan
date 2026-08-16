@@ -60,6 +60,70 @@ Two forks caught here, both worth remembering:
   reader, so everything a task logged went in and stayed there. Logging is set
   up again in `worker_process_init`.
 
+## The monthly budget
+
+`LLM_MONTHLY_BUDGET_USD` (5 by default, 0 turns it off) is what one account may
+spend on the AI in a calendar month, at list price. The rate limits cap
+requests per minute, which is a different thing: a request a minute on an
+expensive model is still a bill at the end of it.
+
+**Checked at the door, once per plan, not per LLM call.** A run that has
+started finishes. Stopping halfway leaves a plan with three activities written
+and five empty, which costs the tokens already spent and delivers nothing. The
+overshoot is bounded by one plan.
+
+**402, not 429.** This is not "too fast", it is "no more money this month", and
+a client that retries a 429 in a minute would be doing exactly the wrong thing.
+The message says when it resets, because an error that does not say what to do
+next is a support ticket.
+
+Both doors are covered: `POST /plans` (which drafts in the background) and
+`POST /plans/{id}/generate`.
+
+| endpoint | who | what it answers |
+| --- | --- | --- |
+| `GET /api/v1/usage/me` | the account itself | spent, budget, remaining |
+| `GET /api/v1/usage` | admin only | every account, dearest first |
+
+The account can see its own limit on purpose: a limit somebody cannot see is a
+limit they can only discover by hitting it.
+
+## Seeing it in Grafana
+
+**http://localhost:3000/d/profplan-ai-cost** (admin/admin locally), provisioned
+from `docker/grafana/dashboards/profplan-ai-cost.json`.
+
+The top half is per account and comes from **the database**; the bottom half is
+trends and comes from **Prometheus**. That split is deliberate: a per-user label
+on a Prometheus counter is an unbounded number of time series, and the first
+thing it breaks is Prometheus itself. Trends belong in metrics, "who spent
+what" belongs in a table.
+
+Grafana reads the database as `grafana_ro`, a role that can only SELECT
+(`docker/postgres/init-grafana-role.sh`). A dashboard with the application's
+own credentials is one bad panel away from a DELETE. For a database that
+already exists, the role is created with:
+
+```sql
+CREATE ROLE grafana_ro LOGIN PASSWORD 'the value of GRAFANA_DB_PASSWORD';
+GRANT CONNECT ON DATABASE profplan TO grafana_ro;
+GRANT USAGE ON SCHEMA public TO grafana_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana_ro;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana_ro;
+```
+
+| panel | question |
+| --- | --- |
+| Spend this month | what is this costing in total |
+| Cost per plan | the number to quote when somebody asks |
+| Who is spending it | per account: runs, tokens, USD |
+| Budget used | how close each account is to being refused |
+| Cost rate by model | why the bill changed, which is usually the model |
+| The dearest runs | one row per plan, to take into Loki |
+
+To go from a row to the calls behind it, Explore in Loki with
+`{container="backend-worker-1"} | json | llm_cost_usd != ""`.
+
 ## Alerts
 
 `LLMSpendJumped` fires on spend five times the last six hours' average, not on
@@ -85,3 +149,34 @@ Three real plans through the whole stack, no mocks:
 Roughly two tenths of a cent per activity on a cheap model. The same plan on
 Sonnet, at 3 and 15 USD per million, would be about 0.35 USD, fifty times more.
 That ratio is the reason every one of these metrics carries the model.
+
+## Measured with two accounts on 2026-08-16
+
+Two teachers and a coordinator, three plans:
+
+| account | runs | tokens | USD |
+| --- | --- | --- | --- |
+| ana@escola.example | 1 | 18.142 | 0,0061 |
+| bruno@escola.example | 2 | 20.243 | 0,0053 |
+
+`GET /usage/me` as Ana returned `{"spent_usd": 0.006099, "budget_usd": 5.0,
+"remaining_usd": 4.993901}`; the admin listing returned both accounts ranked by
+spend; Ana asking for the admin listing got 403. With the budget lowered to
+0,005 USD, her next plan was refused with 402 and *no plan row was written*.
+
+## When Bedrock is switched on
+
+Two things have to be true or the cost stops being the whole cost, and both are
+already watched:
+
+1. **The provider must report usage.** The Bedrock response carries token
+   counts under `usage.inputTokens` / `usage.outputTokens` (Converse) or in the
+   `x-amzn-bedrock-input-token-count` headers (InvokeModel). Whatever the shape,
+   the provider adapter has to return a `TokenUsage`, or every call is counted
+   with no tokens and the bill quietly detaches from the numbers here.
+2. **The model id must be in the price table.** Bedrock ids look like
+   `anthropic.claude-sonnet-4-5-20250929-v1:0` and `us.anthropic.claude-...`,
+   which match none of the prefixes today. Until they are added, those calls
+   land in `profplan_llm_unpriced_calls_total` and `LLMModelHasNoPrice` fires,
+   which is exactly what that alert is for. Bedrock also prices per region, so
+   the entry belongs next to the region it is used in.

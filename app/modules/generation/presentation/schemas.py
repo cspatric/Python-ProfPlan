@@ -52,6 +52,26 @@ class GenerationUsageResponse(BaseModel):
     cost_usd: float
 
 
+class UsageResponse(BaseModel):
+    """One account's AI spend this calendar month."""
+
+    spent_usd: float
+    #: Zero means the cap is switched off for this deployment.
+    budget_usd: float
+    #: None when there is no cap, which is different from nothing left.
+    remaining_usd: float | None
+
+
+class AccountUsageResponse(BaseModel):
+    """What one account spent, for the admin listing."""
+
+    user_id: UUID
+    email: str
+    runs: int
+    tokens: int
+    spent_usd: float
+
+
 class GenerationResponse(BaseModel):
     """A generation run with its items (used for polling)."""
 

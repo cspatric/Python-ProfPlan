@@ -11,6 +11,19 @@ class GenerationNotFoundError(NotFoundError):
     detail = "Generation run not found"
 
 
+class BudgetExhaustedError(AppError):
+    """Raised when an account has spent its monthly AI budget.
+
+    402 rather than 429: this is not "too fast", it is "no more money this
+    month", and a client that retries a 429 in a minute would be doing exactly
+    the wrong thing. The message says when it resets, because an error that
+    does not say what to do next is a support ticket.
+    """
+
+    status_code = status.HTTP_402_PAYMENT_REQUIRED
+    detail = "This account has used its AI budget for this month"
+
+
 class PlannerError(AppError):
     """Raised when the planner agent cannot produce a valid roadmap."""
 

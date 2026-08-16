@@ -64,6 +64,11 @@ async def create_plan(
     # creates an import cycle that breaks the API router.
     from app.infrastructure.celery.tasks.generate import generate_plan
 
+    # Money before work: an account that has spent its month is told so here,
+    # before a plan row exists and before a task is queued. Checking later
+    # would mean refusing a plan the teacher can already see.
+    await generation_service.ensure_budget(user.uuid)
+
     # Validate the selected documents before anything is written: a 404 for an
     # unknown document belongs in the response, not in a worker log.
     await generation_service.resolve_documents(

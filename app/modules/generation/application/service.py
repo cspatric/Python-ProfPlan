@@ -1,11 +1,14 @@
 """Plan-generation use cases: plan (sync) -> fan-out (async) -> poll."""
 
+import logging
 from collections.abc import Mapping, Sequence
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.modules.academic_items.infrastructure.models import AcademicItem
 from app.modules.academic_items.infrastructure.source_repository import (
     AcademicItemSourceRepository,
@@ -19,7 +22,10 @@ from app.modules.generation.domain.entities import (
     GenerationItemStatus,
     GenerationRunStatus,
 )
-from app.modules.generation.domain.exceptions import GenerationNotFoundError
+from app.modules.generation.domain.exceptions import (
+    BudgetExhaustedError,
+    GenerationNotFoundError,
+)
 from app.modules.generation.domain.item_kinds import (
     ItemKind,
     is_graded,
@@ -94,6 +100,24 @@ def _split_period(start: date, end: date, n: int) -> list[tuple[date, date]]:
     return ranges
 
 
+logger = logging.getLogger("app.generation")
+
+
+def _money(value: Decimal) -> str:
+    """Two decimals for money, four for amounts smaller than a cent.
+
+    Rounding a spend of 0.0061 to "0.01" against a budget of "0.00" is a
+    message that reads as a bug. Fractions of a cent are the normal case on a
+    cheap model, so they have to survive the formatting.
+    """
+    return f"{value:.4f}" if 0 < value < Decimal("0.01") else f"{value:.2f}"
+
+
+def _month_start() -> datetime:
+    now = datetime.now(UTC)
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
 async def _retrieve_context(
     retrieval: RetrievalService,
     *,
@@ -152,6 +176,42 @@ class GenerationService:
         self._subjects = subjects
         self._plan_docs = plan_docs
         self._sources = sources
+
+    async def budget(self, user_id: UUID) -> tuple[Decimal, Decimal]:
+        """(spent this month, budget) for an account, both in USD.
+
+        The month is the calendar one in UTC. A rolling window would be
+        fairer and impossible to explain, and "it resets on the first" is a
+        sentence a person can act on.
+        """
+        limit = Decimal(str(get_settings().llm_monthly_budget_usd))
+        spent = await self._repo.spend_since(user_id, _month_start())
+        return spent, limit
+
+    async def ensure_budget(self, user_id: UUID) -> None:
+        """Refuse a new generation when the account has spent its month.
+
+        Checked at the door, once per plan, not per LLM call. A run that has
+        started finishes: stopping halfway through leaves a plan with three
+        activities written and five empty, which costs the tokens already spent
+        and delivers nothing. The overshoot is bounded by one plan, and one
+        plan is cents.
+        """
+        spent, limit = await self.budget(user_id)
+        if limit <= 0 or spent < limit:
+            return
+        logger.warning(
+            "generation refused: monthly AI budget spent",
+            extra={"user_id": str(user_id), "spent_usd": float(spent)},
+        )
+        raise BudgetExhaustedError(
+            f"This account has spent {_money(spent)} USD of its {_money(limit)} "
+            "USD AI budget this month. It resets on the first of next month."
+        )
+
+    async def usage_by_account(self):
+        """Per-account spend for the current month (admin listing)."""
+        return await self._repo.spend_by_user_since(_month_start())
 
     @staticmethod
     def default_input() -> str:

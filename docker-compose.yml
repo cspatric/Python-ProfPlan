@@ -494,6 +494,11 @@ services:
     image: grafana/grafana:11.6.16
     profiles: ["observability"]
     restart: unless-stopped
+    environment:
+      # Substituted into the provisioned datasources. Only these three, not
+      # the whole .env: a dashboard has no business holding the API keys.
+      POSTGRES_DB: ${POSTGRES_DB:-profplan}
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:-}
     depends_on:
       prometheus:
         condition: service_healthy

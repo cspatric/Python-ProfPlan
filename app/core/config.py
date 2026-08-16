@@ -169,6 +169,12 @@ class Settings(BaseSettings):
     # Hybrid retrieval: a word search alongside the vector one, fused by rank.
     # A switch rather than a rewrite, so the two can be compared on the same
     # corpus (scripts/eval_retrieval.py) instead of argued about.
+    # What one account may spend on the AI in a calendar month, in USD at
+    # list price. Zero turns the cap off. This is the only limit on money:
+    # the rate limits cap requests per minute, which is a different thing,
+    # and a request per minute on an expensive model is still a bill.
+    llm_monthly_budget_usd: float = 5.0
+
     rag_hybrid_search: bool = True
     #: How many candidates each half contributes before fusion. Larger than the
     #: limit on purpose: fusion can only promote what one of the lists returned.

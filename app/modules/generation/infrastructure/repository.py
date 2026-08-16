@@ -1,9 +1,10 @@
 """Persistence access for plan-generation runs and their items."""
 
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.academic_items.infrastructure.models import AcademicItem
@@ -13,6 +14,7 @@ from app.modules.generation.domain.entities import (
     GenerationRunStatus,
 )
 from app.modules.generation.infrastructure.models import PlanGeneration
+from app.modules.users.infrastructure.models import User
 
 
 class GenerationRepository:
@@ -42,6 +44,46 @@ class GenerationRepository:
             select(PlanGeneration).where(PlanGeneration.uuid == generation_id)
         )
         return result.scalar_one_or_none()
+
+    async def spend_since(self, user_id: UUID, since: datetime) -> Decimal:
+        """What this account has spent on the AI since `since`, in USD.
+
+        Summed from the runs rather than kept as a running total on the user:
+        a counter that is incremented in two places drifts, and this is the
+        number that decides whether somebody can work today.
+        """
+        total = await self._session.scalar(
+            select(func.coalesce(func.sum(PlanGeneration.llm_cost_usd), 0)).where(
+                PlanGeneration.user_id == user_id,
+                PlanGeneration.created_at >= since,
+            )
+        )
+        return Decimal(total or 0)
+
+    async def spend_by_user_since(
+        self, since: datetime
+    ) -> list[tuple[UUID, str, int, int, Decimal]]:
+        """(user id, email, runs, tokens, USD) for every account, dearest first."""
+        rows = await self._session.execute(
+            select(
+                User.uuid,
+                User.email,
+                func.count(PlanGeneration.uuid),
+                func.coalesce(
+                    func.sum(
+                        PlanGeneration.llm_input_tokens
+                        + PlanGeneration.llm_output_tokens
+                    ),
+                    0,
+                ),
+                func.coalesce(func.sum(PlanGeneration.llm_cost_usd), 0),
+            )
+            .join(User, User.uuid == PlanGeneration.user_id)
+            .where(PlanGeneration.created_at >= since)
+            .group_by(User.uuid, User.email)
+            .order_by(func.coalesce(func.sum(PlanGeneration.llm_cost_usd), 0).desc())
+        )
+        return [tuple(row) for row in rows.all()]
 
     async def add_usage(self, generation_id: UUID, ledger: UsageLedger) -> None:
         """Add one scope's LLM usage to a run's running total.

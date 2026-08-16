@@ -1,0 +1,656 @@
+{
+ "uid": "profplan-ai-cost",
+ "title": "ProfPlan / AI cost",
+ "description": "What the AI is costing, and who is spending it. Trends come from Prometheus, per-account figures from the database.",
+ "tags": [
+  "profplan",
+  "cost",
+  "llm"
+ ],
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "version": 1,
+ "refresh": "1m",
+ "time": {
+  "from": "now-7d",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "row",
+   "title": "This month, by account",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "collapsed": false,
+   "panels": []
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "Spend this month",
+   "description": "Every account together, at list price, since the first of the month. Summed from the runs, which is the same number the budget check reads.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "profplan-db"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 0,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "profplan-db"
+     },
+     "rawSql": "SELECT coalesce(sum(llm_cost_usd), 0)::float8 AS \"USD\" FROM plan_generation WHERE created_at >= date_trunc('month', now())",
+     "format": "table",
+     "rawQuery": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyUSD",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     },
+     "decimals": 4
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Accounts that used the AI",
+   "description": "Distinct accounts with at least one generation run this month.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "profplan-db"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 6,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "profplan-db"
+     },
+     "rawSql": "SELECT count(DISTINCT user_id) AS \"accounts\" FROM plan_generation WHERE created_at >= date_trunc('month', now())",
+     "format": "table",
+     "rawQuery": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "Tokens this month",
+   "description": "Input and output together, as the providers reported them.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "profplan-db"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 12,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "profplan-db"
+     },
+     "rawSql": "SELECT coalesce(sum(llm_input_tokens + llm_output_tokens), 0) AS \"tokens\" FROM plan_generation WHERE created_at >= date_trunc('month', now())",
+     "format": "table",
+     "rawQuery": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "Cost per plan",
+   "description": "The number to quote when somebody asks what this costs to run. Mean over the month's runs that actually called the AI.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "profplan-db"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 18,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "profplan-db"
+     },
+     "rawSql": "SELECT coalesce(avg(llm_cost_usd), 0)::float8 AS \"USD\" FROM plan_generation WHERE created_at >= date_trunc('month', now()) AND llm_calls > 0",
+     "format": "table",
+     "rawQuery": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyUSD",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     },
+     "decimals": 4
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 6,
+   "type": "table",
+   "title": "Who is spending it",
+   "description": "Per account, this month, dearest first. This is the panel Prometheus cannot give: a per-user label on a counter is an unbounded number of time series.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "profplan-db"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 14,
+    "x": 0,
+    "y": 7
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "profplan-db"
+     },
+     "rawSql": "SELECT u.email AS \"account\",\n       count(*) AS \"runs\",\n       sum(g.llm_input_tokens + g.llm_output_tokens) AS \"tokens\",\n       sum(g.llm_cost_usd)::float8 AS \"USD\"\nFROM plan_generation g JOIN users u ON u.uuid = g.user_id\nWHERE g.created_at >= date_trunc('month', now())\nGROUP BY u.email ORDER BY 4 DESC",
+     "format": "table",
+     "rawQuery": true
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "sortBy": [
+     {
+      "displayName": "USD",
+      "desc": true
+     }
+    ]
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto"
+     },
+     "mappings": []
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "USD"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "currencyUSD"
+       },
+       {
+        "id": "decimals",
+        "value": 4
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "green",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 2.5
+          },
+          {
+           "color": "red",
+           "value": 5
+          }
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": 7,
+   "type": "bargauge",
+   "title": "Budget used",
+   "description": "Against LLM_MONTHLY_BUDGET_USD (5 by default). At 100% the account is refused a new generation at the door, with a 402 that says when it resets.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "profplan-db"
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 10,
+    "x": 14,
+    "y": 7
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "profplan-db"
+     },
+     "rawSql": "SELECT u.email AS \"account\",\n       (sum(g.llm_cost_usd) / 5.0 * 100)::float8 AS \"percent\"\nFROM plan_generation g JOIN users u ON u.uuid = g.user_id\nWHERE g.created_at >= date_trunc('month', now())\nGROUP BY u.email ORDER BY 2 DESC LIMIT 10",
+     "format": "table",
+     "rawQuery": true
+    }
+   ],
+   "options": {
+    "displayMode": "gradient",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": true
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "min": 0,
+     "max": 100,
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 70
+       },
+       {
+        "color": "red",
+        "value": 100
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 10,
+   "type": "row",
+   "title": "Where the money goes",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 16
+   },
+   "collapsed": false,
+   "panels": []
+  },
+  {
+   "id": 11,
+   "type": "timeseries",
+   "title": "Cost rate by model",
+   "description": "USD per hour. This is why every metric carries the model: the same plan is a fraction of a cent on the local model and fifty times that on a frontier one, and the fallback chain chooses at runtime.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 17
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (provider, model) (rate(profplan_llm_cost_usd_total[10m])) * 3600",
+     "legendFormat": "{{provider}} / {{model}}",
+     "editorMode": "code",
+     "range": true
+    }
+   ],
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true,
+     "calcs": []
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {},
+     "unit": "currencyUSD",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 12,
+   "type": "timeseries",
+   "title": "Tokens per second by model",
+   "description": "Input and output separately, because output is priced four to five times higher on most models.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 17
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (model, direction) (rate(profplan_llm_tokens_total[5m]))",
+     "legendFormat": "{{model}} {{direction}}",
+     "editorMode": "code",
+     "range": true
+    }
+   ],
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true,
+     "calcs": []
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {},
+     "unit": "short",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "id": 13,
+   "type": "table",
+   "title": "Daily spend",
+   "description": "Every day this month with a run on it, so a spike has a date to look at in Loki.",
+   "datasource": {
+    "type": "postgres",
+    "uid": "profplan-db"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 25
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "profplan-db"
+     },
+     "rawSql": "SELECT date_trunc('day', created_at)::date AS \"day\",\n       count(*) AS \"runs\",\n       sum(llm_cost_usd)::float8 AS \"USD\"\nFROM plan_generation WHERE created_at >= date_trunc('month', now())\nGROUP BY 1 ORDER BY 1 DESC",
+     "format": "table",
+     "rawQuery": true
+    }
+   ],
+   "options": {
+    "showHeader": true
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto"
+     },
+     "mappings": []
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "USD"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "currencyUSD"
+       },
+       {
+        "id": "decimals",
+        "value": 4
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": 14,
+   "type": "table",
+   "title": "The dearest runs",
+   "description": "One row per plan. To see the calls behind a run, open Loki with {container=\"backend-worker-1\"} | json | llm_cost_usd != \"\"",
+   "datasource": {
+    "type": "postgres",
+    "uid": "profplan-db"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 25
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "postgres",
+      "uid": "profplan-db"
+     },
+     "rawSql": "SELECT g.created_at AS \"when\", u.email AS \"account\",\n       g.llm_calls AS \"calls\",\n       g.llm_input_tokens + g.llm_output_tokens AS \"tokens\",\n       g.llm_cost_usd::float8 AS \"USD\"\nFROM plan_generation g JOIN users u ON u.uuid = g.user_id\nWHERE g.created_at >= date_trunc('month', now())\nORDER BY g.llm_cost_usd DESC LIMIT 10",
+     "format": "table",
+     "rawQuery": true
+    }
+   ],
+   "options": {
+    "showHeader": true
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto"
+     },
+     "mappings": []
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "USD"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "currencyUSD"
+       },
+       {
+        "id": "decimals",
+        "value": 4
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}

@@ -19,3 +19,21 @@ datasources:
     uid: tempo
     access: proxy
     url: http://tempo:3200
+
+  # The application's own database, read only (see
+  # docker/postgres/init-grafana-role.sh). Per-account spend lives here rather
+  # than in Prometheus on purpose: a per-user label on a counter is an
+  # unbounded number of time series, and the first thing that breaks is
+  # Prometheus. Trends belong in metrics, "who spent what" belongs in a table.
+  - name: ProfPlan DB
+    type: postgres
+    uid: profplan-db
+    access: proxy
+    url: postgres:5432
+    database: ${POSTGRES_DB}
+    user: grafana_ro
+    secureJsonData:
+      password: ${GRAFANA_DB_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1700
