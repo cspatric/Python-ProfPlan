@@ -147,6 +147,15 @@ class Settings(BaseSettings):
     # LLM gateway (fallback chain: Claude -> OpenAI -> Gemini -> Ollama)
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-5"
+
+    # Amazon Bedrock, authenticated with a Bedrock API key rather than SigV4:
+    # one bearer header, no boto3 and no credential chain. The model id must
+    # be an *inference profile* (us. / global. prefix) for Anthropic's newer
+    # models; the bare foundation-model id is not callable and says so with a
+    # message that reads like a permissions error.
+    bedrock_api_key: str = ""
+    bedrock_region: str = "us-east-1"
+    bedrock_model: str = "us.anthropic.claude-sonnet-5"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
     gemini_api_key: str = ""

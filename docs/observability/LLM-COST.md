@@ -164,19 +164,24 @@ Two teachers and a coordinator, three plans:
 spend; Ana asking for the admin listing got 403. With the budget lowered to
 0,005 USD, her next plan was refused with 402 and *no plan row was written*.
 
-## When Bedrock is switched on
+## Bedrock, and what it costs compared to the rest
 
-Two things have to be true or the cost stops being the whole cost, and both are
-already watched:
+Switched on 2026-08-16. Both things a new provider has to get right are done
+and both were already watched: it reports usage (Converse returns `usage`, and
+the cached-token counts are added in rather than dropped, since they are
+billed), and its model ids are in the price table, with the `us.` / `global.`
+routing prefix stripped first because it decides which region serves the
+request, not what it costs.
 
-1. **The provider must report usage.** The Bedrock response carries token
-   counts under `usage.inputTokens` / `usage.outputTokens` (Converse) or in the
-   `x-amzn-bedrock-input-token-count` headers (InvokeModel). Whatever the shape,
-   the provider adapter has to return a `TokenUsage`, or every call is counted
-   with no tokens and the bill quietly detaches from the numbers here.
-2. **The model id must be in the price table.** Bedrock ids look like
-   `anthropic.claude-sonnet-4-5-20250929-v1:0` and `us.anthropic.claude-...`,
-   which match none of the prefixes today. Until they are added, those calls
-   land in `profplan_llm_unpriced_calls_total` and `LLMModelHasNoPrice` fires,
-   which is exactly what that alert is for. Bedrock also prices per region, so
-   the entry belongs next to the region it is used in.
+The number worth staring at, one plan of the same shape:
+
+| model | calls | tokens | USD |
+| --- | --- | --- | --- |
+| `gemini-flash-lite-latest` | 10 | 20.235 | **0,0069** |
+| `us.anthropic.claude-sonnet-4-6` (Bedrock) | 11 | 57.120 | **0,7899** |
+
+A hundred and fifteen times more, and it is not only the price per token: the
+better model writes far more. At the default 5 USD monthly cap that is about
+**six plans per teacher per month** on Sonnet, against roughly seven hundred on
+the cheap model. Which of those is right is a product decision, and it is the
+one this page exists to let somebody make with a number in front of them.

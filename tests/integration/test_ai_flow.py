@@ -8,7 +8,7 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
-_PROVIDERS = {"claude", "openai", "gemini", "ollama"}
+_PROVIDERS = {"claude", "bedrock", "openai", "gemini", "ollama"}
 
 
 class TestAiHealth:

@@ -28,10 +28,22 @@ logger = logging.getLogger("app.ai")
 
 #: model prefix -> (input USD per 1M tokens, output USD per 1M tokens)
 PRICES_USD_PER_MILLION: dict[str, tuple[float, float]] = {
-    # Anthropic
+    # Anthropic, direct
     "claude-opus": (15.00, 75.00),
     "claude-sonnet": (3.00, 15.00),
     "claude-haiku": (1.00, 5.00),
+    # Anthropic, through Bedrock. Same list price, different id: Bedrock keeps
+    # the vendor in the model name, and the routing prefix is stripped before
+    # this table is consulted.
+    "anthropic.claude-opus": (15.00, 75.00),
+    "anthropic.claude-sonnet": (3.00, 15.00),
+    "anthropic.claude-haiku": (1.00, 5.00),
+    # Other Bedrock families, so a fallback to one of them is not silently
+    # unpriced.
+    "amazon.nova-pro": (0.80, 3.20),
+    "amazon.nova-lite": (0.06, 0.24),
+    "amazon.nova-micro": (0.035, 0.14),
+    "meta.llama3": (0.72, 0.72),
     # OpenAI
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-4o": (2.50, 10.00),
@@ -57,6 +69,21 @@ PRICES_USD_PER_MILLION: dict[str, tuple[float, float]] = {
 LOCAL_MODEL_PREFIXES = ("llama", "qwen", "mistral", "phi", "gemma", "deepseek")
 
 
+#: Bedrock addresses a model through an inference profile, so the id that was
+#: billed carries a routing prefix: `us.`, `eu.`, `apac.`, `global.`. The
+#: prefix decides which region serves the request, not what it costs, so it is
+#: removed before pricing. (Bedrock's list price does vary by region for some
+#: models; the day that matters here, this is the line to split.)
+_ROUTING_PREFIXES = ("us.", "eu.", "apac.", "global.", "us-gov.")
+
+
+def _without_routing(model: str) -> str:
+    for prefix in _ROUTING_PREFIXES:
+        if model.startswith(prefix):
+            return model[len(prefix) :]
+    return model
+
+
 def cost_usd(model: str, usage: TokenUsage | None) -> float | None:
     """What this call cost, or None when the model is not in the table.
 
@@ -66,7 +93,7 @@ def cost_usd(model: str, usage: TokenUsage | None) -> float | None:
     if usage is None:
         return None
 
-    name = model.strip().lower()
+    name = _without_routing(model.strip().lower())
     if any(name.startswith(prefix) for prefix in LOCAL_MODEL_PREFIXES):
         return 0.0
 

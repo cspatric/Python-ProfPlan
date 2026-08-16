@@ -289,11 +289,18 @@ authenticated user and every query is scoped to that user.
 
 `POST /api/v1/ai/ask` retrieves the user's most relevant chunks and asks an LLM
 to answer using that context. The **LLM gateway** tries providers in a fallback
-chain — **Claude → OpenAI → Gemini → Ollama (local)** — each guarded by a retry
-policy and a circuit breaker: a provider that is unavailable (no API key) or
-failing is skipped and the next one is tried. Configure keys/models via
-`ANTHROPIC_*`, `OPENAI_*`, `GEMINI_*` and `OLLAMA_CHAT_MODEL` in `.env` (Ollama
-needs no key and is the final fallback).
+chain — **Claude → Bedrock → OpenAI → Gemini → Ollama (local)** — each guarded
+by a retry policy and a circuit breaker: a provider that is unavailable (no API
+key) or failing is skipped and the next one is tried. Configure keys/models via
+`ANTHROPIC_*`, `BEDROCK_*`, `OPENAI_*`, `GEMINI_*` and `OLLAMA_CHAT_MODEL` in
+`.env` (Ollama needs no key and is the final fallback).
+
+**Bedrock** is authenticated with a Bedrock API key in a bearer header rather
+than SigV4, so it needs no boto3 and no credential chain, and it speaks the
+Converse API, which reports tokens the same way whatever model answers.
+`BEDROCK_MODEL` must be an *inference profile* id (`us.anthropic.claude-sonnet-5`);
+the bare foundation-model id answers "not available for this account", which
+reads like a permissions problem and is not one.
 
 Two things keep this endpoint from cascading into the rest of the API under
 load: the circuit breaker's state lives in **Redis** (`LLM_CIRCUIT_*`), not

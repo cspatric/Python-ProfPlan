@@ -55,6 +55,7 @@ class AiProvidersService:
     def _configured(self, name: str) -> bool:
         return {
             "claude": bool(self._settings.anthropic_api_key),
+            "bedrock": bool(self._settings.bedrock_api_key),
             "openai": bool(self._settings.openai_api_key),
             "gemini": bool(self._settings.gemini_api_key),
             _OLLAMA: True,

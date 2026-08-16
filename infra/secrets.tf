@@ -85,6 +85,7 @@ resource "aws_ssm_parameter" "external" {
     "GOOGLE_OAUTH_CLIENT_ID",
     "GOOGLE_OAUTH_CLIENT_SECRET",
     "SMTP_PASSWORD",
+    "BEDROCK_API_KEY",
   ])
 
   name  = "${local.secrets_path}/${each.value}"

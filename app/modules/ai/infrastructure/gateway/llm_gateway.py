@@ -1,6 +1,9 @@
 """LLM gateway: try providers in order with per-provider circuit breakers.
 
-Fallback chain (as designed): Claude → OpenAI → Gemini → Ollama. Each provider
+Fallback chain: Claude → Bedrock → OpenAI → Gemini → Ollama. Anthropic direct
+comes before Anthropic through Bedrock because it is the same model for less
+plumbing; Bedrock sits second because it is the one with an enterprise contract
+behind it, and both are ahead of the cheaper models. Each provider
 is wrapped in a circuit breaker; a provider that is unavailable or fails (after
 its own transient-error retries) is skipped and the next one is tried. If all
 fail, ``AllProvidersFailedError`` is raised.
@@ -28,6 +31,7 @@ from app.modules.ai.domain.interfaces import LLMProvider
 from app.modules.ai.domain.pricing import cost_usd
 from app.modules.ai.domain.usage import TokenUsage, record
 from app.modules.ai.infrastructure.gateway.circuit_breaker import CircuitBreaker
+from app.modules.ai.infrastructure.providers.bedrock import BedrockProvider
 from app.modules.ai.infrastructure.providers.claude import ClaudeProvider
 from app.modules.ai.infrastructure.providers.gemini import GeminiProvider
 from app.modules.ai.infrastructure.providers.ollama import OllamaProvider
@@ -177,14 +181,16 @@ def build_gateway(redis) -> LLMGateway:
             reset_seconds=settings.llm_circuit_reset_seconds,
         )
 
-    claude, openai, gemini, ollama = (
+    claude, bedrock, openai, gemini, ollama = (
         ClaudeProvider(),
+        BedrockProvider(),
         OpenAIProvider(),
         GeminiProvider(),
         OllamaProvider(),
     )
     providers: list[tuple[LLMProvider, CircuitBreaker]] = [
         (claude, _breaker(claude.name)),
+        (bedrock, _breaker(bedrock.name)),
         (openai, _breaker(openai.name)),
         (gemini, _breaker(gemini.name)),
         (ollama, _breaker(ollama.name)),

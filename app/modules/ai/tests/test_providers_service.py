@@ -54,7 +54,10 @@ class FakeAudit:
 
 def _service(*, openai: str = "k", gemini: str = "k", claude: str = "") -> tuple:
     settings = SimpleNamespace(
-        anthropic_api_key=claude, openai_api_key=openai, gemini_api_key=gemini
+        anthropic_api_key=claude,
+        openai_api_key=openai,
+        gemini_api_key=gemini,
+        bedrock_api_key="",
     )
     repo, audit = FakeRepo(), FakeAudit()
     service = AiProvidersService(FakeSession(), FakeGateway(), repo, settings, audit)

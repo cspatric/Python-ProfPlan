@@ -52,3 +52,28 @@ def test_the_arithmetic_is_per_million_not_per_thousand():
 
 def test_case_and_padding_do_not_change_the_price():
     assert cost_usd("  GPT-4o-Mini ", MILLION) == 0.75
+
+
+# --------------------------------------------------------------------------- #
+# Bedrock ids, which are the same models under different names.
+# --------------------------------------------------------------------------- #
+
+
+def test_a_bedrock_sonnet_costs_the_same_as_a_direct_one():
+    assert cost_usd("anthropic.claude-sonnet-5", MILLION) == 18.0
+
+
+def test_the_routing_prefix_does_not_change_the_price():
+    """Bedrock addresses a model through an inference profile, so the id that
+    was billed carries `us.` or `global.`. That decides which region serves the
+    request, not what it costs."""
+    for model in (
+        "us.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-sonnet-5",
+        "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    ):
+        assert cost_usd(model, MILLION) == 18.0
+
+
+def test_a_bedrock_opus_is_not_priced_as_a_sonnet():
+    assert cost_usd("us.anthropic.claude-opus-4-1", MILLION) == 90.0
