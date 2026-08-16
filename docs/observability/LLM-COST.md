@@ -124,6 +124,26 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana_ro;
 To go from a row to the calls behind it, Explore in Loki with
 `{container="backend-worker-1"} | json | llm_cost_usd != ""`.
 
+### Where a Bedrock price comes from
+
+Not from memory. Every model on Bedrock carries an agreement offer with a rate
+card on it, and it is readable:
+
+```bash
+curl -H "Authorization: Bearer $BEDROCK_API_KEY" \
+  https://bedrock.us-east-1.amazonaws.com/list-foundation-model-agreement-offers/anthropic.claude-sonnet-5
+```
+
+That is how the Sonnet 5 entry was written, and it is why it is *not* the 4.x
+price: 2,20 in and 11,00 out per million in us-east-1 on demand, against 3 and
+15 for the 4.x family. Through the `global.` profile it is 2,00 and 10,00. The
+routing prefix is stripped before the table is consulted, so the dearer of the
+two is quoted; for a cost report, over-reporting is the right direction to be
+wrong in.
+
+The offer only lists while the agreement is not yet accepted, so read it before
+switching a model on, not after.
+
 ## Alerts
 
 `LLMSpendJumped` fires on spend five times the last six hours' average, not on

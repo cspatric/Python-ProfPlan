@@ -28,7 +28,14 @@ logger = logging.getLogger("app.ai")
 
 #: model prefix -> (input USD per 1M tokens, output USD per 1M tokens)
 PRICES_USD_PER_MILLION: dict[str, tuple[float, float]] = {
-    # Anthropic, direct
+    # Anthropic, direct.
+    #
+    # The Sonnet family price here is the 4.x list price. Sonnet 5 through
+    # Bedrock is cheaper (see below), which is evidence that the direct price
+    # for it is lower too, and evidence is not a number: check Anthropic's
+    # price page before running the direct provider on Sonnet 5, because a
+    # priced-but-wrong model is worse than an unpriced one, and the unpriced
+    # alert will not fire for it.
     "claude-opus": (15.00, 75.00),
     "claude-sonnet": (3.00, 15.00),
     "claude-haiku": (1.00, 5.00),
@@ -38,6 +45,14 @@ PRICES_USD_PER_MILLION: dict[str, tuple[float, float]] = {
     "anthropic.claude-opus": (15.00, 75.00),
     "anthropic.claude-sonnet": (3.00, 15.00),
     "anthropic.claude-haiku": (1.00, 5.00),
+    # Sonnet 5 is not priced like the 4.x family, and this is not from memory:
+    # it is the rate card on the model's own agreement offer, read with
+    # ListFoundationModelAgreementOffers. us-east-1 on demand is 2.20 and
+    # 11.00; through the *global* profile it is 2.00 and 10.00. The routing
+    # prefix is stripped before this table is read, so the dearer of the two is
+    # quoted, which errs toward over-reporting. For a cost report that is the
+    # right direction to be wrong in.
+    "anthropic.claude-sonnet-5": (2.20, 11.00),
     # Other Bedrock families, so a fallback to one of them is not silently
     # unpriced.
     "amazon.nova-pro": (0.80, 3.20),
