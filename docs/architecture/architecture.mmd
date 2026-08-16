@@ -30,12 +30,12 @@ subgraph API["⚙️ API — FastAPI (image profplan-backend)"]
   subgraph MOD["Modules — router ➜ service (presentation · application · domain · infrastructure)"]
     direction TB
     DISP["APIRouter · prefix /api/v1<br/>uvicorn · UVICORN_WORKERS processes<br/>auth cookie required<br/>(except login / register)"]
-    A_AUTH["auth · register login refresh logout logout-all me<br/>password-reset(+confirm) · email-verification(+confirm)<br/>AuthService — Argon2id · JWT 15min/30d<br/>rotating refresh + reuse detection · Redis lockout"]
-    A_CRUD["domain CRUD · /subjects /plans /modules /academic-items<br/>/academic-item-categories /types /icons /colors<br/>GET /academic-items/{id}/handout.pdf — WeasyPrint<br/>Services — every query scoped to user_id · soft delete"]
+    A_AUTH["auth · register login refresh logout logout-all me<br/>password-reset(+confirm) · email-verification(+confirm)<br/>GET /auth/providers · OAuth Google (start + callback)<br/>routes registered only when configured · state in Redis, single-use<br/>AuthService — Argon2id · JWT 15min/30d<br/>rotating refresh + reuse detection · Redis lockout"]
+    A_CRUD["domain CRUD · /subjects /plans /modules /academic-items<br/>/academic-item-categories /types /icons /colors<br/>GET /academic-items/{id}/sources — the passages behind the text<br/>GET /academic-items/{id}/handout.pdf — Markdown→HTML→PDF (WeasyPrint)<br/>Services — every query scoped to user_id · soft delete"]
     A_DOC["documents · POST upload → 202 · list · get · /status · delete<br/>UploadService — extension + MIME + magic bytes<br/>100 MB bounded read → 413"]
     A_RAG["rag · POST /rag/query<br/>RetrievalService — embed → cosine top-k<br/>ALWAYS scoped to owned content_ids"]
     A_AI["ai · POST /ai/ask · GET /ai/health · PATCH /ai/providers/{name}<br/>AiService — RAG context + prompt safety<br/>« untrusted_document_context »"]
-    A_GEN["generation · POST /plans · POST /plans/{id}/generate<br/>GET /generations/{id}<br/>GenerationService — PlannerAgent + RoadmapReviewer<br/>plan (sync) → materialize → fan-out → poll"]
+    A_GEN["generation · POST /plans/{id}/generate · GET /generations/{id}<br/>GET /generations/usage/me · GET /generations/usage (admin)<br/>GenerationService — PlannerAgent + RoadmapReviewer<br/>ensure_budget at the door (once per plan, never mid-run)<br/>plan (sync) → materialize → fan-out → poll"]
     A_AUD["audit · GET /audit-logs (admin)<br/>AuditRecorder — row staged in the SAME<br/>transaction as the business change"]
     A_OPS["ops · /health · /ready · /metrics · /docs · /static"]
     DISP --> A_AUTH
@@ -54,13 +54,15 @@ end
 %% ═══════════════════ LLM ═══════════════════
 subgraph LLM["🤖 LLM GATEWAY — one door for every AI call"]
   direction TB
-  GW["LLMGateway<br/>semaphore LLM_MAX_CONCURRENCY=5<br/>skips providers disabled in ai_provider<br/>no DB connection held during the call"]
+  GW["LLMGateway<br/>semaphore LLM_MAX_CONCURRENCY=5<br/>skips providers disabled in ai_provider<br/>no DB connection held during the call<br/>returns Completion(text, model, TokenUsage)"]
   CB["CircuitBreaker — state in Redis<br/>closed → open (3 fails) → half-open (30s)<br/>shared by every API/worker replica"]
+  LED["UsageLedger — ContextVar, per asyncio task<br/>sums planner + repair + judge + 1 call/item<br/>priced per model · missing usage = LLM_UNPRICED<br/>→ plan_generation_model_usage"]
   PC["1 · Anthropic Claude<br/>claude-sonnet-5"]
   PO["2 · OpenAI<br/>gpt-4o"]
   PGM["3 · Google Gemini<br/>gemini-2.5-flash"]
   PL["4 · Ollama (local)<br/>llama3.2:3b<br/>never disableable"]
   GW --- CB
+  GW --- LED
   GW ==> PC
   PC -.->|"fail · no key · circuit open"| PO
   PO -.->|"fail"| PGM
@@ -72,7 +74,7 @@ end
 subgraph DAT["🗄️ DATA & MODELS — internal network only"]
   direction TB
   PGB["PgBouncer :6432<br/>transaction pooling<br/>asyncpg prepared statements OFF"]
-  PG["PostgreSQL 17 + pgvector<br/>users · providers · user_providers · refresh_tokens<br/>auth_logs · audit_logs · subjects · plans · modules<br/>academic_items · academic_item_category(+_types)<br/>icons · colors · verification_tokens<br/>document · document_content · document_format<br/>plan_generation · plan_document · ai_provider<br/>chunks vector(1024) · HNSW cosine<br/>SQLAlchemy 2.0 async · Alembic migrations"]
+  PG["PostgreSQL 17 + pgvector<br/>users · providers · user_providers · refresh_tokens<br/>auth_logs · audit_logs · subjects · plans · modules<br/>academic_items · academic_item_category(+_types)<br/>academic_item_source — the passages behind each item<br/>icons · colors · verification_tokens<br/>document · document_content · document_format<br/>plan_generation · plan_document · ai_provider<br/>plan_generation_model_usage — tokens + USD per model<br/>chunks vector(1024) · HNSW cosine<br/>SQLAlchemy 2.0 async · Alembic migrations"]
   RDS["Redis 8<br/>db0 cache · db1 Celery broker · db2 results<br/>db3 rate limit · login lockout<br/>embedding cache (7d) · circuit-breaker keys"]
   MIO["MinIO — S3<br/>bucket profplan<br/>raw files: {subject_id}/{uuid}.ext"]
   OLL["Ollama<br/>bge-m3 embeddings (1024-d)<br/>llama3.2:3b chat fallback"]
@@ -131,7 +133,9 @@ A_GEN  ==>|"④ planner: draft → eval → repair"| GW
 A_GEN  -->|"④ plan_generation + modules + items (PENDING)"| PGB
 A_GEN  -.->|"④ fan-out: 1 task per item"| RDS
 GENT   ==>|"④ generate item"| GW
-GENT   -->|"④ item content + run status"| PG
+GENT   -->|"④ item content + status + academic_item_source"| PG
+LED    -->|"④ tokens + USD per model, per run"| PG
+A_GEN  -->|"④ budget: spend this month vs LLM_MONTHLY_BUDGET_USD"| PGB
 
 A_RAG  -->|"⑤ embed question"| OLL
 A_RAG  -->|"⑤ cosine top-k over chunks"| PGB
@@ -159,5 +163,5 @@ class CLI,TRF edge
 class DISP,M1,M2,M3,M4,A_AUTH,A_CRUD,A_DOC,A_RAG,A_AI,A_GEN,A_AUD,A_OPS api
 class WRK,P1,P2,P3,P4,P5,GENT,MAILT,FLW asyn
 class PGB,PG,RDS,MIO,OLL,MAIL,ADM data
-class GW,CB,PC,PO,PGM,PL llm
+class GW,CB,LED,PC,PO,PGM,PL llm
 class OTC,TMP,PTL,LOK,PRM,ALM,NEX,GRF obs

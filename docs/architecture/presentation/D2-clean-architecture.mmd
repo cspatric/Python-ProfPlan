@@ -1,0 +1,60 @@
+%% D2 — Clean architecture: the four layers, the dependency rule,
+%% and one request travelling through them.
+%% Show this while narrating "the shape of the code" and "one request end to end".
+
+flowchart TB
+
+subgraph REQ["One request: POST /api/v1/subjects"]
+  direction TB
+  R0["Traefik<br/>routes by host · terminates TLS<br/>attaches the real client IP"]
+  R1["SecurityHeaders — decorates every response, 429s included"]
+  R2["RequestLogging — 1 JSON line: user, latency, trace_id"]
+  R3["Rate limit (slowapi) — counters in Redis, so limits hold across replicas"]
+  R4["CSRF — innermost: it only needs this request's own cookies"]
+  R0 --> R1 --> R2 --> R3 --> R4
+end
+
+subgraph LAY["The module — 13 of these, all with the same 4 layers"]
+  direction TB
+
+  L1["PRESENTATION · presentation/<br/>router + request/response schemas + deps<br/>HTTP and nothing else<br/>a malformed body dies here with 422"]
+  L2["APPLICATION · application/<br/>SubjectService — the use case<br/>owner taken from the authenticated user<br/>stages the audit row in the same transaction"]
+  L3["DOMAIN · domain/<br/>entities · enums · interfaces · exceptions<br/>plain Python — no FastAPI, no SQLAlchemy<br/>deletable frameworks, surviving folder"]
+  L4["INFRASTRUCTURE · infrastructure/<br/>SQLAlchemy models + repository<br/>owns the SQL · filters by user_id and deleted_at<br/>the ONLY place a query is built"]
+
+  L1 -->|"calls"| L2
+  L2 -->|"calls"| L4
+  L2 -.->|"depends on the interface"| L3
+  L4 -.->|"implements the interface"| L3
+end
+
+DB[("PostgreSQL<br/>subject + audit_logs<br/>commit together or not at all")]
+
+R4 ==> L1
+L4 ==> DB
+
+RULE["THE DEPENDENCY RULE<br/>outer knows inner · never the reverse<br/>the domain layer does not know<br/>what HTTP is or what a database is"]
+
+INV["THE ONE INVARIANT<br/>user_id NEVER comes from the request body<br/>it comes from the auth cookie<br/>and the repository filters by it<br/><br/>routers are forbidden from touching the DB<br/>so the ownership filter is structure,<br/>not something a developer must remember<br/><br/>one forgotten filter = teacher reads teacher"]
+
+TRADE["WHY MODULAR MONOLITH<br/>one deployable · borders held by structure<br/>bought: no distributed transactions,<br/>no network failure per pair, light ops<br/>paid: no independent deploy/scale per module<br/>borders drawn where I WOULD cut later —<br/>the option stays open, it is not closed"]
+
+LAY --- RULE
+LAY --- INV
+LAY --- TRADE
+
+classDef edge fill:#eef2f7,stroke:#64748b,stroke-width:2px,color:#0b1220
+classDef pres fill:#e8efff,stroke:#2563eb,stroke-width:3px,color:#0b1220
+classDef app  fill:#eef4ff,stroke:#3b82f6,stroke-width:3px,color:#0b1220
+classDef dom  fill:#fff7e6,stroke:#d97706,stroke-width:3px,color:#0b1220
+classDef inf  fill:#e7f6ef,stroke:#0f766e,stroke-width:3px,color:#0b1220
+classDef note fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#0b1220
+classDef db   fill:#e7f6ef,stroke:#0f766e,stroke-width:2px,color:#0b1220
+
+class R0,R1,R2,R3,R4 edge
+class L1 pres
+class L2 app
+class L3 dom
+class L4 inf
+class DB db
+class RULE,INV,TRADE note

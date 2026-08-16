@@ -379,6 +379,28 @@ what CI uses. Pointing it at a real server is four environment variables and
 one command to prove it works, both in
 [`docs/deployment/EMAIL.md`](docs/deployment/EMAIL.md).
 
+## Your data, and leaving
+
+Two rights rather than features, and the reason they are obligations here: the
+teacher's uploaded material is theirs, and passages of it are sent to
+third-party models.
+
+| endpoint | what it does |
+|----------|--------------|
+| `GET /users/me/export` | one JSON file: the account, every subject, plan, module and activity, the text parsed from each document, and the passages behind each activity |
+| `POST /users/me/delete` | deletes the account and everything it owns, files in object storage included |
+
+Deletion is deletion, not a flag: the rows go by cascade, the objects are
+removed first (a row deleted with its file left behind is a file nobody will
+ever find), and the security log keeps its events with the identity overwritten,
+because a log the account it incriminates can empty is not a log and one that
+keeps names forever is not erasure. Confirmation is the password, or the
+account's own address typed out when it signs in with Google and has none.
+
+[`docs/legal/PRIVACY.md`](docs/legal/PRIVACY.md) names every processor that
+receives any of it, and [`docs/legal/TERMS.md`](docs/legal/TERMS.md) says what
+the product does not promise.
+
 ## The AI budget
 
 `LLM_MONTHLY_BUDGET_USD` caps what one account may spend in a calendar month

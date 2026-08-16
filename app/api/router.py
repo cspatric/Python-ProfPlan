@@ -26,9 +26,11 @@ from app.modules.plan_modules.presentation.router import router as modules_route
 from app.modules.rag.presentation.router import router as rag_router
 from app.modules.subjects.presentation.router import router as subjects_router
 from app.modules.teaching_plans.presentation.router import router as plans_router
+from app.modules.users.presentation.router import router as users_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router)
+api_router.include_router(users_router)
 api_router.include_router(subjects_router)
 api_router.include_router(plans_router)
 api_router.include_router(modules_router)

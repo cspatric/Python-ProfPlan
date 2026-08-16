@@ -1,0 +1,82 @@
+%% D3 — The AI side: ingestion, retrieval, the one gateway, the planner,
+%% and what every call costs.
+%% Show this while narrating the AI technical decisions.
+
+flowchart TB
+
+subgraph ING["① WRITE PATH — ingestion (async, idempotent)"]
+  direction LR
+  I0["POST /documents<br/>validate BEFORE persisting:<br/>extension + declared MIME + magic bytes<br/>bounded read → 413, never OOM"]
+  I1["MinIO<br/>{subject_id}/{uuid}.ext<br/>filename is user input —<br/>it never becomes a path"]
+  I2["202 Accepted<br/>row = PENDING<br/>enqueue documents.ingest"]
+  I3["parse → real Markdown<br/>pdf · docx · pptx · xlsx · txt · md<br/>converting structure, not scraping text"]
+  I4["header-aware chunking<br/>~1000 chars + overlap<br/>each chunk keeps its breadcrumb<br/>WHY: a blind cut separates a heading<br/>from the paragraph it governs"]
+  I5["embed · bge-m3 · 1024-d<br/>batches of 8 · progress published<br/>cache in Redis, 7d TTL"]
+  I6["index in pgvector<br/>HNSW · cosine<br/>status → INDEXED<br/>failure → FAILED + reason"]
+  I0 --> I1 --> I2 --> I3 --> I4 --> I5 --> I6
+end
+
+subgraph RET["② READ PATH — retrieval"]
+  direction LR
+  Q0["POST /rag/query<br/>exposed on its own, deliberately"]
+  Q1["embed the question<br/>SAME model as ingestion —<br/>two models = two vector spaces = nonsense"]
+  Q2["cosine top-k over chunks<br/>ALWAYS scoped to owned content_ids<br/>search_similar RAISES without a scope —<br/>not a convention, an exception"]
+  Q0 --> Q1 --> Q2
+end
+
+subgraph GATE["③ ONE DOOR — every AI call in the system"]
+  direction TB
+  G0["LLMGateway<br/>semaphore LLM_MAX_CONCURRENCY=5 — I rate-limit MYSELF<br/>holds NO pooled DB connection during the call<br/>(a chain can run minutes; it would starve every other route)"]
+  G1["CircuitBreaker — state in REDIS, not process memory<br/>closed → open (3 fails) → half-open (30s)<br/>WHY Redis: with N replicas, each would have to<br/>rediscover the outage by hammering a dead endpoint"]
+  G2["1 Claude → 2 OpenAI → 3 Gemini → 4 Ollama (local)<br/>skipped if: no key · disabled in ai_provider · circuit open<br/>invariants: Ollama never disableable ·<br/>≥1 non-Ollama must stay active<br/>all four fail → 503"]
+  G3["UsageLedger — ContextVar, one per asyncio task<br/>so two plans drafted at once cannot pollute each other<br/>ambient like a request id: passing it through every<br/>signature means the fifth function forgets it<br/>missing usage counted as UNPRICED, never estimated"]
+  G0 --- G1
+  G0 --> G2
+  G0 --- G3
+end
+
+subgraph PLAN["④ THE PLANNER — sync first, then fan out"]
+  direction TB
+  P0["POST /plans/{id}/generate"]
+  P1["validate the chosen documents belong to this user<br/>they scope retrieval for every item below"]
+  P2["ensure_budget — at the door, ONCE per plan<br/>never mid-run: stopping halfway spends the tokens<br/>and delivers a half-written plan<br/>overshoot bounded by one plan = cents"]
+  P3["PLANNER RUNS SYNCHRONOUSLY,<br/>BEFORE ANYTHING IS PERSISTED<br/>draft → evaluate → repair"]
+  P4["evaluation is two-tier:<br/>code checks ALWAYS (free)<br/>LLM judge ONLY if code flagged something<br/>or the context came back weak<br/>clean plan = exactly 1 call · worst case 3"]
+  P5["invalid roadmap → 502/503<br/>ZERO orphan rows<br/>the order of operations IS the rollback"]
+  P6["materialize: plan_generation RUNNING<br/>+ 1 module per roadmap module (dates split)<br/>+ 1 academic_item per item, each PENDING<br/>with its own sub-prompt"]
+  P7["FAN OUT — 1 Celery task per item<br/>each retrieves its own context, calls the gateway,<br/>writes content + academic_item_source"]
+  P8["recompute run:<br/>COMPLETED · PARTIAL · FAILED<br/>PARTIAL is deliberate — item 31 failing<br/>must not destroy the other 39"]
+  P0 --> P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8
+end
+
+subgraph TRUST["⑤ WHY YOU CAN TRUST THE OUTPUT"]
+  direction TB
+  T0["GET /academic-items/{id}/sources<br/>the exact passages the model was SHOWN,<br/>stored at generation time —<br/>not a search re-run afterwards"]
+  T1["rank · document · section · excerpt · similarity<br/>cosine distance converted to similarity at the edge<br/>(exact conversion, not a flattering rescale)"]
+  T2["an EMPTY list is a real answer:<br/>this item had no document behind it —<br/>exactly what a reader needs to know<br/>before trusting a confident paragraph"]
+  T3["prompt injection: retrieved text wrapped in<br/>«untrusted_document_context»<br/>every system prompt treats it as DATA,<br/>never as instructions"]
+  T0 --> T1 --> T2
+  T0 --- T3
+end
+
+I6 -.->|"chunks are what retrieval searches"| Q2
+Q2 ==>|"context"| G0
+P3 ==> G0
+P7 ==> G0
+G3 -->|"tokens + USD per model, per run"| USG[("plan_generation_model_usage<br/>GET /generations/usage/me<br/>GET /generations/usage (admin)<br/>calendar month, UTC —<br/>a rolling window is fairer<br/>and impossible to explain")]
+P7 --> SRC[("academic_item_source")]
+SRC -.-> T0
+
+classDef ing  fill:#f2ecff,stroke:#7c3aed,stroke-width:2px,color:#0b1220
+classDef ret  fill:#e7f6ef,stroke:#0f766e,stroke-width:2px,color:#0b1220
+classDef gate fill:#fff0e6,stroke:#ea580c,stroke-width:3px,color:#0b1220
+classDef plan fill:#e8efff,stroke:#2563eb,stroke-width:2px,color:#0b1220
+classDef trust fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#0b1220
+classDef db   fill:#e7f6ef,stroke:#0f766e,stroke-width:2px,color:#0b1220
+
+class I0,I1,I2,I3,I4,I5,I6 ing
+class Q0,Q1,Q2 ret
+class G0,G1,G2,G3 gate
+class P0,P1,P2,P3,P4,P5,P6,P7,P8 plan
+class T0,T1,T2,T3 trust
+class USG,SRC db
