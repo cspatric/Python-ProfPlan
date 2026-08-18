@@ -76,6 +76,9 @@ async def erase_my_account(
     response.delete_cookie(key="refresh_token", path="/")
     response.delete_cookie(key="csrf_token", path="/")
     return AccountErasedResponse(
-        detail="Account deleted. Nothing of it is kept but the security log, without your name in it.",
+        detail=(
+            "Account deleted. Nothing of it is kept but the security log, "
+            "without your name in it."
+        ),
         **removed,
     )
