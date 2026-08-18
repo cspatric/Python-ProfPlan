@@ -1,0 +1,73 @@
+flowchart LR
+
+ROW2["`🛡️ THE BEHAVIOUR — what the user sees at the edge of capacity`"]
+  R4["`NO ORPHANS
+the planner runs BEFORE any write
+invalid roadmap → 502/503,
+nothing to clean up
+the sequence IS the rollback`"]
+ROW2 -.- R4
+  R5["`PARTIAL IS A DELIBERATE STATE
+item 31 failing must not
+destroy the other 39
+the teacher keeps what worked`"]
+  R4 -.- R5 -.- R6
+  R6["`GRACEFUL DEGRADATION, MEASURED
+100 → 300 users: latency grows
+~linearly, failures stay at ZERO,
+the container stays healthy
+Restarts=0 · OOMKilled=false
+in EVERY run, including the one
+with 89% failures
+it degrades and refuses.
+it does not fall over.`"]
+
+ROW1["`🛡️ THE MECHANISMS — a senior system is one that fails well`"]
+  R1["`CIRCUIT BREAKER, STATE IN REDIS
+in-memory → every replica rediscovers
+the outage by hammering a dead
+endpoint, N times, once per process
+in Redis → the whole FLEET shares
+ONE view of 'this provider is down'
+worthless at 1 replica, large at 50:
+made for the system
+that does not exist yet`"]
+ROW1 -.- R1
+  R2["`IDEMPOTENCY + task_acks_late
+they only work TOGETHER
+acks_late alone → duplicated work
+idempotency alone → documents lost
+on every worker crash
+redelivery of PROCESSING/INDEXED
+is a no-op, so a worker dying
+mid-task loses nothing`"]
+  R3["`RETRY 15s → 30s → 60s
+→ FAILED + reason,
+visible at /documents/{id}/status
+infinite retry is a clogged queue;
+a visible failure is a support team
+that can actually answer the teacher`"]
+  R1 -.- R2 -.- R3 -.- R7
+  R7["`NO POOLED DB CONNECTION HELD
+DURING AN LLM CALL
+a chain can run for minutes
+holding one would starve every
+other route — and the symptom would
+appear on endpoints with nothing
+to do with AI. You would spend
+the night in the wrong place.`"]
+
+FLAW["`MY OWN SYSTEM'S FLAW — I present it before you find it
+
+an exhausted DB pool returns 500 today. It should be 503 + Retry-After, because it is BACKPRESSURE, not an error.
+Consequence 1: the client and the load balancer never learn to back off.
+Consequence 2, and this is the worse one: on the dashboard those 500s are indistinguishable from a real bug —
+I polluted my own error signal with load.
+
+Written down in perf/RESULTS.md. One status code, one exception handler.`"]
+
+classDef res  fill:#fff0e6,stroke:#ea580c,stroke-width:2px,color:#0b1220
+classDef note fill:#fef9c3,stroke:#ca8a04,stroke-width:3px,color:#0b1220
+
+class R1,R2,R3,R4,R5,R6,R7 res
+class FLAW note

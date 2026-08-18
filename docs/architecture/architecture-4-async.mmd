@@ -1,0 +1,92 @@
+flowchart LR
+
+IN2["`◀ from 2 · enqueued work`"]
+
+BRK["`Redis broker`"]
+BRK_N["`db1 broker · db2 results
+the queue distributes, not the load balancer`"]
+BRK -.- BRK_N
+
+WRK["`Celery worker`"]
+WRK_N["`same image as the API
+task_acks_late + idempotent tasks = at-least-once
+NOT exactly-once, and it does not pretend to be
+prefetch 1 · retry 15s, 30s, 60s, then FAILED
+NullPool engine, event-loop safe`"]
+WRK -.- WRK_N
+
+P1["`fetch object`"]
+P2["`parse to Markdown`"]
+P2_N["`pdf · docx · pptx · xlsx · txt · md
+converting structure, not scraping text`"]
+P2 -.- P2_N
+P3["`header-aware chunk`"]
+P3_N["`~1000 chars + overlap
+a blind cut separates a heading
+from the paragraph it governs`"]
+P3 -.- P3_N
+P4["`embed`"]
+P4_N["`bge-m3, batches of 8, progress published
+93% of ingestion time is this call`"]
+P4 -.- P4_N
+P5["`index`"]
+P5_N["`status to INDEXED · INDEXED = no-op
+stale PROCESSING is taken over
+failure to FAILED + reason, visible at /status`"]
+P5 -.- P5_N
+
+GENT["`generation.run_item`"]
+GENT_N["`one task per academic item, FAST tier
+each retrieves its own RAG context
+run recomputed: RUNNING / COMPLETED / PARTIAL
+PARTIAL is deliberate: item 31 failing must not
+destroy the other 39`"]
+GENT -.- GENT_N
+
+MAILT["`emails.send`"]
+MAILT_N["`password reset · email verification`"]
+MAILT -.- MAILT_N
+
+DLQ["`Dead letter queue`"]
+DLQ_N["`Celery+Redis has none, so this is built
+a Redis list of tasks that exhausted retries
+carries task, args and error · capped at 1000
+alerts: Growing and Backlog · has a runbook
+emails are NOT replayable, no body stored
+every entry is somebody: a document nobody
+can search, a plan that never filled in`"]
+DLQ -.- DLQ_N
+
+FLW["`Flower :5555`"]
+FLW_N["`per-task detail Prometheus cannot give
+aggregates say something is wrong,
+this says which one`"]
+FLW -.- FLW_N
+
+OUT3["`▶ continues in 3 · AI (FAST tier)`"]
+OUT5["`▶ continues in 5 · DATA`"]
+OUT6["`▶ continues in 6 · OBSERVABILITY`"]
+
+IN2 ==> BRK
+BRK ==>|"deliver task"| WRK
+WRK --> P1
+P1 --> P2 --> P3 --> P4 --> P5
+WRK --> GENT
+WRK --> MAILT
+WRK -.->|"retries exhausted"| DLQ
+GENT ==> OUT3
+P4 -->|"embeddings"| OUT5
+P5 -->|"content + chunks + tsvector"| OUT5
+GENT -->|"content + academic_item_source"| OUT5
+FLW -.-> BRK
+WRK -.-> OUT6
+
+classDef asyn fill:#f2ecff,stroke:#7c3aed,stroke-width:2px,color:#0b1220
+classDef data fill:#e7f6ef,stroke:#0f766e,stroke-width:2px,color:#0b1220
+classDef port fill:#ffffff,stroke:#0b1220,stroke-width:2px,stroke-dasharray:4 3,color:#0b1220
+classDef note fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+
+class WRK,P1,P2,P3,P4,P5,GENT,MAILT,DLQ,FLW asyn
+class BRK data
+class IN2,OUT3,OUT5,OUT6 port
+class BRK_N,WRK_N,P2_N,P3_N,P4_N,P5_N,GENT_N,MAILT_N,DLQ_N,FLW_N note

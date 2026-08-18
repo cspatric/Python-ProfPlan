@@ -1,0 +1,102 @@
+flowchart LR
+
+CLI["`Client`"]
+CLI_N["`React · Postman
+HttpOnly cookies + X-CSRF-Token
+no bearer token, no localStorage`"]
+CLI -.- CLI_N
+
+LBC["`Cloud LB · L4/L7`"]
+LBC_N["`ALB or NLB, one entry per region
+health-checks each Traefik instance
+spreads across availability zones
+NOT deployed today: there is one node
+this is the growth path, not the state`"]
+LBC -.- LBC_N
+
+TRF["`Traefik v3.3`"]
+TRF_N["`edge + load balancer
+:80 to :443 TLS · single entrypoint
+X-Forwarded-For · dashboard :8080 off
+discovers replicas from Docker labels
+round-robin: request cost is uniform
+NO sticky sessions: the API is stateless
+GAP: no healthCheck wired to /ready`"]
+TRF -.- TRF_N
+
+TRF2["`Traefik instance 2`"]
+TRF2_N["`same config, another AZ
+Traefik stops being a single point`"]
+TRF2 -.- TRF2_N
+
+R1["`api container 1`"]
+R1_N["`docker · uvicorn x N workers
+stateless: no session, no local file
+4 workers measured at 2.11x throughput`"]
+R1 -.- R1_N
+R2["`api container 2`"]
+R3["`api container 3`"]
+RN["`api container N`"]
+RN_N["`adding one is a compose scale,
+never a config edit
+capacity: 0.13 req/s per user
+1M users = 130k req/s = ~730 cores
+= ~250 containers of 4 vCPU`"]
+RN -.- RN_N
+
+H1["`Node A · Docker host`"]
+H1_N["`4 vCPU · runs api + worker containers`"]
+H1 -.- H1_N
+H2["`Node B · Docker host`"]
+H2_N["`scaling out = more hosts, same image
+nothing in the application changes`"]
+H2 -.- H2_N
+
+W1["`worker container 1`"]
+W2["`worker container 2`"]
+W2_N["`same image as the API
+the queue distributes, not the LB
+prefetch 1: a busy worker gets no backlog`"]
+W2 -.- W2_N
+
+PGB["`PgBouncer :6432`"]
+PGB_N["`the opposite of the LB: it CONCENTRATES
+thousands of client connections to 100-200
+max_connections=100 is the first wall`"]
+PGB -.- PGB_N
+
+OUT2["`▶ continues in 2 · API`"]
+OUT4["`▶ continues in 4 · ASYNC`"]
+OUT5["`▶ continues in 5 · DATA`"]
+
+CLI -->|"HTTPS"| TRF
+LBC -.->|"future: across AZs"| TRF
+LBC -.-> TRF2
+TRF ==>|"round-robin"| R1
+TRF ==>|"round-robin"| R2
+TRF ==>|"round-robin"| R3
+TRF -.->|"round-robin"| RN
+R1 -.->|"runs on"| H1
+R2 -.->|"runs on"| H1
+R3 -.->|"runs on"| H2
+RN -.->|"runs on"| H2
+W1 -.->|"runs on"| H1
+W2 -.->|"runs on"| H2
+R1 ==> OUT2
+W1 --> OUT4
+R2 -->|"every replica funnels here"| PGB
+PGB --> OUT5
+
+classDef edge fill:#eef2f7,stroke:#64748b,stroke-width:2px,color:#0b1220
+classDef lb fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#0b1220
+classDef host fill:#f1f5f9,stroke:#475569,stroke-width:3px,color:#0b1220
+classDef data fill:#e7f6ef,stroke:#0f766e,stroke-width:2px,color:#0b1220
+classDef port fill:#ffffff,stroke:#0b1220,stroke-width:2px,stroke-dasharray:4 3,color:#0b1220
+classDef note fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+
+class CLI,TRF,TRF2 edge
+class LBC,R1,R2,R3,RN,W1,W2 lb
+class H1,H2 host
+class PGB data
+class OUT2,OUT4,OUT5 port
+class CLI_N,LBC_N,TRF_N,TRF2_N,R1_N,RN_N,H1_N,H2_N,W2_N,PGB_N note

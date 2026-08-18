@@ -1,72 +1,139 @@
-%% D4 — Observability: three signals that link to each other,
-%% and the alerting that makes them matter.
-%% Show this while narrating the Grafana tour.
-
 flowchart LR
 
-subgraph SRC["What produces the signals"]
-  direction TB
-  APP["FastAPI API<br/>N uvicorn workers"]
-  WRK["Celery worker"]
-  HOST["The host machine"]
-end
+SRC["`What produces the signals`"]
+  APP["`FastAPI API
+N uvicorn workers`"]
+SRC -.- APP
+  WRK["`Celery worker`"]
+  HOST["`The host machine`"]
 
-subgraph M["METRICS — 'THAT it is wrong'"]
-  direction TB
-  MET["/metrics<br/>prometheus-fastapi-instrumentator<br/>rate · latency · status per route"]
-  OWN["Exported BY THE APP — the 3 the HTTP<br/>layer physically cannot see:<br/>profplan_dependency_up (probe, 15s)<br/>profplan_celery_queue_depth<br/>profplan_llm_requests_total{provider,outcome}<br/><br/>DECISION: I export what something WATCHES,<br/>not every number I could think of"]
-  NEX["node-exporter<br/>host CPU · memory · disk · network<br/>'is the app slow' and 'is the box dying'<br/>are two questions"]
-  FLW["Flower<br/>the individual task, its args, its traceback<br/>Prometheus gives aggregates for alerts;<br/>this answers WHICH one"]
-  PRM["Prometheus :9090<br/>scrapes /metrics, NOT /ready —<br/>readiness is for the orchestrator,<br/>metrics is for monitoring"]
+M["`METRICS — 'THAT it is wrong'`"]
+  MET["`/metrics
+prometheus-fastapi-instrumentator
+rate · latency · status per route`"]
+M -.- MET
+  OWN["`Exported BY THE APP — the 3 the HTTP
+layer physically cannot see:
+profplan_dependency_up (probe, 15s)
+profplan_celery_queue_depth
+profplan_llm_requests_total{provider,outcome}
+
+DECISION: I export what something WATCHES,
+not every number I could think of`"]
+  NEX["`node-exporter
+host CPU · memory · disk · network
+'is the app slow' and 'is the box dying'
+are two questions`"]
+  FLW["`Flower
+the individual task, its args, its traceback
+Prometheus gives aggregates for alerts;
+this answers WHICH one`"]
+  PRM["`Prometheus :9090
+scrapes /metrics, NOT /ready —
+readiness is for the orchestrator,
+metrics is for monitoring`"]
   MET --> PRM
   OWN --> PRM
   NEX --> PRM
   FLW --> PRM
-end
 
-subgraph L["LOGS — 'WHAT the user did'"]
-  direction TB
-  STD["single-line JSON to stdout<br/>no files, no rotation —<br/>a container should not know Loki exists"]
-  RLM["RequestLoggingMiddleware — ONE line per request<br/>method · route · status · latency · IP · UA<br/>acting user (id, email, role) · trace_id<br/>one line, not three: half a story across<br/>two lines is unqueryable<br/><br/>GOTCHA FIXED: this serialization was on the<br/>event loop and cost real throughput —<br/>moved off it in its own commit"]
-  PTL["Promtail<br/>discovers containers via the Docker socket<br/>→ a new service is collected with zero config"]
-  LOK["Loki :3100"]
+L["`LOGS — 'WHAT the user did'`"]
+  STD["`single-line JSON to stdout
+no files, no rotation —
+a container should not know Loki exists`"]
+L -.- STD
+  RLM["`RequestLoggingMiddleware — ONE line per request
+method · route · status · latency · IP · UA
+acting user (id, email, role) · trace_id
+one line, not three: half a story across
+two lines is unqueryable
+
+GOTCHA FIXED: this serialization was on the
+event loop and cost real throughput —
+moved off it in its own commit`"]
+  PTL["`Promtail
+discovers containers via the Docker socket
+→ a new service is collected with zero config`"]
+  LOK["`Loki :3100`"]
   STD --> RLM --> PTL --> LOK
-end
 
-subgraph T["TRACES — 'WHERE the time went'"]
-  direction TB
-  OTL["OpenTelemetry, opt-in (OTEL_ENABLED)<br/>auto-instruments FastAPI · SQLAlchemy ·<br/>Redis · httpx · Celery"]
-  PROP["context PROPAGATES THROUGH THE REDIS BROKER<br/>→ the HTTP request and the background job<br/>that outlived it are ONE trace"]
-  OTC["OTel Collector :4317/:4318<br/>my code talks OTLP to this, never to Tempo —<br/>changing backend is one container's config,<br/>not a change across 13 modules"]
-  TMP["Tempo<br/>no UI of its own · not published to the host<br/>Grafana is the only window"]
+T["`TRACES — 'WHERE the time went'`"]
+  OTL["`OpenTelemetry, opt-in (OTEL_ENABLED)
+auto-instruments FastAPI · SQLAlchemy ·
+Redis · httpx · Celery`"]
+T -.- OTL
+  PROP["`context PROPAGATES THROUGH THE REDIS BROKER
+→ the HTTP request and the background job
+that outlived it are ONE trace`"]
+  OTC["`OTel Collector :4317/:4318
+my code talks OTLP to this, never to Tempo —
+changing backend is one container's config,
+not a change across 13 modules`"]
+  TMP["`Tempo
+no UI of its own · not published to the host
+Grafana is the only window`"]
   OTL --> PROP --> OTC --> TMP
-end
 
-GRF["Grafana :3000<br/>3 datasources, all PROVISIONED AS CODE<br/>dashboard JSON lives in the repo<br/>a dashboard that exists only in one browser<br/>is a personal note, not infrastructure"]
+GRF["`Grafana :3000
+3 datasources, all PROVISIONED AS CODE
+dashboard JSON lives in the repo
+a dashboard that exists only in one browser
+is a personal note, not infrastructure`"]
 
 PRM --> GRF
 LOK --> GRF
 TMP --> GRF
 
-LINK["THE LINK IS THE PRODUCT<br/><br/>log line → trace_id → TraceQL → the span<br/>{container=...} | json | user_email=...<br/><br/>MEASURED ON A LIVE STACK:<br/>POST /documents 118ms → returns 202<br/>worker run/documents.ingest 4586ms<br/>POST (embedding) 4351ms<br/>30 spans · 2 processes · 1 trace<br/><br/>→ 93% of ingestion was the EMBEDDING CALL<br/>no aggregate metric would say that<br/>without it I'd have optimized the parser<br/>and made 7% of the problem faster"]
+LINK["`THE LINK IS THE PRODUCT
+
+log line → trace_id → TraceQL → the span
+{container=...} | json | user_email=...
+
+MEASURED ON A LIVE STACK:
+POST /documents 118ms → returns 202
+worker run/documents.ingest 4586ms
+POST (embedding) 4351ms
+30 spans · 2 processes · 1 trace
+
+→ 93% of ingestion was the EMBEDDING CALL
+no aggregate metric would say that
+without it I'd have optimized the parser
+and made 7% of the problem faster`"]
 
 GRF ==> LINK
 
-subgraph A["ALERTING — a metric nobody looks at is not monitoring"]
-  direction TB
-  RUL["12 rules, versioned in the repo<br/>ApiDown · HighServerErrorRate (>2% 5xx/5m)<br/>LatencyP95Degraded (>1s/10m — baseline 545ms MEASURED)<br/>DependencyDown · CeleryQueueBacklog/Stalled<br/>CeleryTaskFailures · LlmAllProvidersFailing<br/>LlmProviderCircuitOpen · HostDisk/Memory"]
-  WD["Watchdog — fires ALWAYS, on purpose<br/>an alert that never fired is indistinguishable<br/>from a broken one · its SILENCE is the signal"]
-  ALM["Alertmanager :9093<br/>groups · INHIBITS symptoms of a cause<br/>it already reported · routes"]
-  RB["every rule carries a runbook annotation<br/>→ docs/observability/ALERTS.md<br/>an alert without a runbook is a 3am scare"]
-  CI["CI VALIDATES ALL OF IT<br/>promtool check rules · amtool check-config<br/>· dashboard JSON<br/>WHY: a broken rule file makes Prometheus start<br/>with NO ALERTS AT ALL and tell nobody —<br/>a silent failure in the anti-silence system"]
+A["`ALERTING — a metric nobody looks at is not monitoring`"]
+  RUL["`12 rules, versioned in the repo
+ApiDown · HighServerErrorRate (>2% 5xx/5m)
+LatencyP95Degraded (>1s/10m — baseline 545ms MEASURED)
+DependencyDown · CeleryQueueBacklog/Stalled
+CeleryTaskFailures · LlmAllProvidersFailing
+LlmProviderCircuitOpen · HostDisk/Memory`"]
+A -.- RUL
+  WD["`Watchdog — fires ALWAYS, on purpose
+an alert that never fired is indistinguishable
+from a broken one · its SILENCE is the signal`"]
+  ALM["`Alertmanager :9093
+groups · INHIBITS symptoms of a cause
+it already reported · routes`"]
+  RB["`every rule carries a runbook annotation
+→ docs/observability/ALERTS.md
+an alert without a runbook is a 3am scare`"]
+  CI["`CI VALIDATES ALL OF IT
+promtool check rules · amtool check-config
+· dashboard JSON
+WHY: a broken rule file makes Prometheus start
+with NO ALERTS AT ALL and tell nobody —
+a silent failure in the anti-silence system`"]
   RUL --- WD
   RUL --> ALM
   RUL --- RB
   RUL --- CI
-end
 
 PRM ==> RUL
-PANEL["EVERY PANEL BACKS A RULE<br/>if it pages nobody it is decoration,<br/>and decoration trains your eye to skip the screen"]
+PANEL["`EVERY PANEL BACKS A RULE
+if it pages nobody it is decoration,
+and decoration trains your eye to skip the screen`"]
 GRF --- PANEL
 
 APP --> MET

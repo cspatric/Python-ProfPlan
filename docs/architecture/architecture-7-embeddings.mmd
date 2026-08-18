@@ -1,0 +1,206 @@
+flowchart LR
+
+IN2(["`◀ from 2 · API`"])
+
+CONCEPT["`WHAT A VECTOR IS`"]
+CONCEPT_N["`'normalizacao de banco de dados'
+│
+▼  bge-m3
+▂▇▃▁▅▇▂▆▁▃▇▄▂▅▇▁▃▆▂▇▄▁▅▃
+[ 0.021, -0.184, 0.077, ... ]
+1024 float32
+───────────
+the model never returns words. It returns a
+POSITION in a 1024-dimension space, and the
+only question anyone asks of it afterwards is
+how close two positions are`"]
+CONCEPT -.- CONCEPT_N
+
+TXT[/"`Markdown text`"/]
+CHK["`Chunk`"]
+CHK_N["`embedding_chunk_chars = 1000, header-aware
+the breadcrumb rides with the chunk, so a
+retrieved passage still knows its section
+a 120 KB book ≈ 120000 chars ≈ 120 chunks`"]
+CHK -.- CHK_N
+
+BAT["`Batch of 8`"]
+BAT_N["`embedding_batch_size = 8 · ~40 s per request
+120 chunks ÷ 8 = 15 requests ≈ 10 min
+sized so ONE request finishes inside a timeout:
+all 120 in one call never returns`"]
+BAT -.- BAT_N
+
+CACHE[("`Redis
+embedding cache`")]
+CACHE_N["`TTL 604800 s = 7 days
+identical text is never embedded twice`"]
+CACHE -.- CACHE_N
+
+EMB{{"`bge-m3 · 1024-d`"}}
+EMB_N["`1.5 s/chunk on CPU vs 0.06 s for all-minilm.
+24x slower and kept: the corpus is Portuguese
+and the fast ones are English-trained.
+cost paid ONCE per document, against retrieval
+quality on every plan generated afterwards`"]
+EMB -.- EMB_N
+
+VEC[/"`vector(1024)`"/]
+VEC_N["`1024 × 4 bytes (float32) = 4 KB per chunk
+2000-chunk book = 8 MB of vectors
+float32 because pgvector stores float32;
+the vectors are the cheap part, time is the cost`"]
+VEC -.- VEC_N
+
+IDX[("`chunks
+HNSW + TSVECTOR`")]
+IDX_N["`ix_chunks_embedding USING hnsw (vector_cosine_ops)
+HNSW = a layered proximity graph. Search enters at
+a sparse top layer, greedily walks toward the query,
+descends. Sub-linear instead of scanning every row.
+───────────
+it is APPROXIMATE: it can miss a true neighbour.
+that is the trade being made, and it is why the
+recall numbers below are measured, not assumed.
+───────────
+content_tsv lives in the same row and commits in
+the same transaction: no second store to fall
+out of sync at 3am`"]
+IDX -.- IDX_N
+
+Q[/"`Question`"/]
+QEMB{{"`Embed the question`"}}
+QEMB_N["`the SAME model as ingestion. Non-negotiable:
+two models = two vector spaces, and a cosine
+between them is a meaningless number that still
+looks like a score. Nothing errors. It just gets
+quietly worse.`"]
+QEMB -.- QEMB_N
+
+SEM["`Vector half`"]
+SEM_N["`cos(A,B) = (A·B) / (‖A‖ ‖B‖)
+distance = 1 − cos
+───────────
+operator <=> is COSINE DISTANCE: lower is closer.
+converted to similarity only at the API edge,
+exactly, not rescaled to look nicer.
+───────────
+cosine and not L2: bge-m3 returns normalised
+vectors, so magnitude carries no meaning and
+only direction does.
+───────────
+takes rag_candidate_pool = 30`"]
+SEM -.- SEM_N
+
+LEX["`Lexical half`"]
+LEX_N["`to_tsvector, lexemes joined by OR, NOT
+websearch_to_tsquery, which joins with AND:
+'why are food chains short' would demand every
+word and match nothing at all.
+───────────
+OR finds any passage sharing a term; ts_rank_cd
+(cover density, proximity-aware) floats the ones
+sharing several, close together. That is what
+people mean when they say BM25.
+───────────
+Postgres tokenises with the index configuration,
+so stopwords and stemming agree on both sides.
+A stopword-only question returns None and the
+vector half answers alone: an honest fallback.
+Also 30 candidates.`"]
+LEX -.- LEX_N
+
+RRF{{"`RRF fusion`"}}
+RRF_N["`score = 1/(k + rank_vec) + 1/(k + rank_lex)
+rag_rrf_k = 60
+───────────
+A · vector 1st, lexical 40th → 1/61 + 1/100 = 0.02639
+B · vector 5th, lexical 3rd  → 1/65 + 1/63  = 0.03126 ◀ wins
+C · vector 2nd, absent       → 1/62 + 0     = 0.01613
+───────────
+B tops neither list and still wins. Agreement between
+two independent searches beats one strong showing,
+which is the entire reason to run two.`"]
+RRF -.- RRF_N
+
+WHY>"`rank, never score`"]
+WHY_N["`cosine distance and ts_rank_cd are different
+quantities on different scales with no honest
+conversion. Any weighted sum is a magic number
+tuned to the corpus it was tuned on.
+rank is the one thing both lists genuinely agree
+on, which is why this survives a change of
+embedding model without retuning.
+k = 60 flattens the curve: rank 1 is worth 0.0164
+and rank 10 is worth 0.0143, close enough that
+agreement outweighs a single first place.`"]
+WHY -.- WHY_N
+
+TOPK["`Top 5`"]
+TOPK_N["`pool 30 per half against a limit of 5, on purpose:
+fusion can only promote what a list returned, so
+cutting both at 5 would discard exactly the
+agreements this mechanism exists to find`"]
+TOPK -.- TOPK_N
+
+CTX[/"`Context block`"/]
+CTX_N["`wrapped in untrusted_document_context;
+every system prompt treats it as data
+closest distance > 0.45 = weak grounding, one of
+the two conditions that wake the LLM judge`"]
+CTX -.- CTX_N
+
+EVAL["`Measured, not assumed`"]
+EVAL_N["`scripts/eval_retrieval.py over a golden set
+recall at 1 / 3 / 5, then MRR
+───────────
+vector  · 0.62 · 0.85 · 0.92 · MRR 0.74
+lexical · 0.54 · 0.77 · 0.85 · MRR 0.66
+hybrid  · 0.77 · 0.92 · 1.00 · MRR 0.85
+───────────
+recall and not precision: two irrelevant passages
+cost tokens, one missing passage costs a wrong
+answer.
+expected passages keyed by TEXT, not by chunk id:
+ids change on every re-ingestion, and a golden set
+you must rebuild is a golden set nobody runs.`"]
+EVAL -.- EVAL_N
+
+OUT3(["`▶ continues in 3 · AI`"])
+OUT5(["`▶ continues in 5 · DATA`"])
+
+IN2 ==>|"upload"| TXT
+TXT --> CHK --> BAT --> CACHE --> EMB --> VEC --> IDX
+IDX --> OUT5
+CONCEPT -.-> EMB
+
+IN2 ==>|"question"| Q
+Q --> QEMB
+QEMB ==> SEM
+QEMB ==> LEX
+IDX -.->|"the rows both halves search"| SEM
+IDX -.->|"the rows both halves search"| LEX
+SEM ==>|"rank 1..30"| RRF
+LEX ==>|"rank 1..30"| RRF
+RRF --- WHY
+RRF --> TOPK --> CTX
+CTX ==> OUT3
+EVAL -.->|"is why the read path is hybrid"| RRF
+
+classDef write fill:#ede9fe,stroke:#6d28d9,stroke-width:2px,color:#2e1065
+classDef store fill:#ddd6fe,stroke:#5b21b6,stroke-width:3px,color:#2e1065
+classDef read fill:#d1fae5,stroke:#047857,stroke-width:2px,color:#064e3b
+classDef fuse fill:#fef3c7,stroke:#b45309,stroke-width:3px,color:#451a03
+classDef eval fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px,color:#172554
+classDef concept fill:#fce7f3,stroke:#be185d,stroke-width:3px,color:#500724
+classDef port fill:#ffffff,stroke:#0f172a,stroke-width:2px,color:#0f172a
+classDef note fill:#fcfdfe,stroke:#e2e8f0,stroke-width:1px,color:#7c8899
+
+class TXT,CHK,BAT,EMB,VEC write
+class CACHE,IDX store
+class Q,QEMB,SEM,LEX,TOPK,CTX read
+class RRF,WHY fuse
+class EVAL eval
+class CONCEPT concept
+class IN2,OUT3,OUT5 port
+class CONCEPT_N,CHK_N,BAT_N,CACHE_N,EMB_N,VEC_N,IDX_N,QEMB_N,SEM_N,LEX_N,RRF_N,WHY_N,TOPK_N,CTX_N,EVAL_N note

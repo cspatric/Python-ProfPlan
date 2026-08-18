@@ -1,0 +1,128 @@
+flowchart LR
+
+IN1["`◀ from 1 · EDGE`"]
+
+M1["`1 SecurityHeaders`"]
+M1_N["`CSP default-src none · nosniff
+frame DENY · HSTS in prod
+decorates every response, 429s included`"]
+M1 -.- M1_N
+M2["`2 RequestLogging`"]
+M2_N["`one JSON line per request
+user · latency · status · trace_id
+serialization moved off the event loop`"]
+M2 -.- M2_N
+M3["`3 Rate limit`"]
+M3_N["`slowapi · 120/min · auth 10 · expensive 20
+counters in Redis: limits hold across replicas`"]
+M3 -.- M3_N
+M4["`4 CSRF`"]
+M4_N["`double-submit cookie on unsafe methods
+skipped when there is no session
+innermost: needs only this request cookies`"]
+M4 -.- M4_N
+
+DISP["`APIRouter · /api/v1`"]
+DISP_N["`13 modules, four layers each:
+presentation · application · domain · infrastructure
+outer knows inner, never the reverse
+auth cookie required except login / register
+every list paginated: limit + offset, capped`"]
+DISP -.- DISP_N
+
+A_AUTH["`auth`"]
+A_AUTH_N["`register login refresh logout logout-all me
+password-reset · email-verification
+GET /auth/providers · OAuth Google (OIDC)
+routes registered only when configured
+state in Redis, single-use, stops login-CSRF
+Argon2id · JWT 15min / 30d
+rotating refresh + reuse detection · lockout`"]
+A_AUTH -.- A_AUTH_N
+
+A_USR["`users`"]
+A_USR_N["`GET /me/export, data portability
+POST /me/delete, real erasure
+security log survives, without the name`"]
+A_USR -.- A_USR_N
+
+A_CRUD["`domain CRUD`"]
+A_CRUD_N["`/subjects /plans /modules /academic-items
+/academic-item-categories /types /icons /colors
+GET /academic-items/{id}/sources, the passages
+GET /academic-items/{id}/handout.pdf, WeasyPrint
+every query scoped to user_id · soft delete
+this is the multi-tenant boundary`"]
+A_CRUD -.- A_CRUD_N
+
+A_DOC["`documents`"]
+A_DOC_N["`POST upload to 202 · list · get · /status · delete
+extension + MIME + magic bytes, then stored
+100 MB bounded read to 413, never OOM`"]
+A_DOC -.- A_DOC_N
+
+A_RAG["`rag`"]
+A_RAG_N["`POST /rag/query
+exposed on its own, not only inside the AI:
+tells a bad answer from a bad retrieval`"]
+A_RAG -.- A_RAG_N
+
+A_AI["`ai`"]
+A_AI_N["`POST /ai/ask · GET /ai/health
+PATCH /ai/providers/{name} (admin, audited)`"]
+A_AI -.- A_AI_N
+
+A_GEN["`generation`"]
+A_GEN_N["`POST /plans/{id}/generate · GET /generations/{id}
+GET /generations/usage/me · /usage (admin)
+language chosen by the teacher: pt · en · es
+ensure_budget at the door, once per plan
+plan (sync), materialize, fan-out, poll`"]
+A_GEN -.- A_GEN_N
+
+A_AUD["`audit`"]
+A_AUD_N["`GET /audit-logs (admin)
+row staged in the SAME transaction
+as the business change: atomic or neither`"]
+A_AUD -.- A_AUD_N
+
+A_OPS["`ops`"]
+A_OPS_N["`/health · /ready · /metrics · /docs · /static`"]
+A_OPS -.- A_OPS_N
+
+OUT3["`▶ continues in 3 · AI and RAG`"]
+OUT4["`▶ continues in 4 · ASYNC`"]
+OUT5["`▶ continues in 5 · DATA`"]
+OUT6["`▶ continues in 6 · OBSERVABILITY`"]
+
+IN1 ==> M1
+M1 --> M2 --> M3 --> M4
+M4 ==> DISP
+DISP --> A_AUTH
+DISP --> A_USR
+DISP --> A_CRUD
+DISP --> A_DOC
+DISP --> A_RAG
+DISP --> A_AI
+DISP --> A_GEN
+DISP --> A_AUD
+DISP --> A_OPS
+A_AI ==> OUT3
+A_GEN ==> OUT3
+A_RAG --> OUT3
+A_DOC --> OUT4
+A_GEN --> OUT4
+A_AUTH --> OUT5
+A_USR --> OUT5
+A_CRUD --> OUT5
+A_AUD --> OUT5
+M2 -.-> OUT6
+A_OPS -.-> OUT6
+
+classDef api fill:#e8efff,stroke:#2563eb,stroke-width:2px,color:#0b1220
+classDef port fill:#ffffff,stroke:#0b1220,stroke-width:2px,stroke-dasharray:4 3,color:#0b1220
+classDef note fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+
+class M1,M2,M3,M4,DISP,A_AUTH,A_USR,A_CRUD,A_DOC,A_RAG,A_AI,A_GEN,A_AUD,A_OPS api
+class IN1,OUT3,OUT4,OUT5,OUT6 port
+class M1_N,M2_N,M3_N,M4_N,DISP_N,A_AUTH_N,A_USR_N,A_CRUD_N,A_DOC_N,A_RAG_N,A_AI_N,A_GEN_N,A_AUD_N,A_OPS_N note

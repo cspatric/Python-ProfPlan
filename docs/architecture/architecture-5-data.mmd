@@ -1,0 +1,80 @@
+flowchart LR
+
+IN["`◀ from 1, 2, 3 and 4`"]
+
+PGB["`PgBouncer :6432`"]
+PGB_N["`transaction pooling · prepared statements OFF
+concentrates: thousands of clients to 100-200 real
+max_connections=100 is the first wall to hit
+makes nothing faster today: it is preventive`"]
+PGB -.- PGB_N
+
+PG["`PostgreSQL 17 + pgvector`"]
+PG_N["`users · providers · user_providers · refresh_tokens
+auth_logs · audit_logs · verification_tokens
+subjects · plans · modules · academic_items
+academic_item_category(+_types) · icons · colors
+academic_item_source, the passages behind an item
+document · document_content · document_format
+plan_generation · plan_document · ai_provider
+plan_generation_model_usage, tokens + USD/model
+chunks: vector(1024) HNSW cosine + TSVECTOR index
+no separate vector DB: chunks commit with the row
+SQLAlchemy 2.0 async · Alembic migrations only`"]
+PG -.- PG_N
+
+RDS["`Redis 8`"]
+RDS_N["`db0 cache · db1 broker · db2 results
+db3 rate limit · login lockout · OAuth state
+embedding cache (7d) · circuit-breaker keys
+dead letter list
+separate logical dbs so flushing a cache
+never drops a queue`"]
+RDS -.- RDS_N
+
+MIO["`MinIO · S3 compatible`"]
+MIO_N["`bucket profplan · {subject_id}/{uuid}.ext
+filename is user input, never a path
+no per-request cost, no egress cost
+moving to real S3 = endpoint + credential`"]
+MIO -.- MIO_N
+
+OLL["`Ollama`"]
+OLL_N["`bge-m3 embeddings, 1024-d, multilingual
+24x slower than the fastest option, kept
+because the material is in Portuguese
+changing it needs a migration, not a setting
+llama3.2:3b chat fallback`"]
+OLL -.- OLL_N
+
+MAIL["`Mailpit :8025`"]
+MAIL_N["`catches dev mail, no third-party account`"]
+MAIL -.- MAIL_N
+
+ADM["`Adminer :8081`"]
+ADM_N["`DB UI, dev profile only
+a DB UI on a production network is a liability`"]
+ADM -.- ADM_N
+
+NET["`Two Docker networks`"]
+NET_N["`frontend: Traefik to API
+backend: everything internal
+Postgres, Redis and Ollama are NOT
+published to the host`"]
+NET -.- NET_N
+
+IN ==> PGB
+PGB ==>|"pooled sessions"| PG
+IN ==> RDS
+IN ==> MIO
+IN ==> OLL
+MAIL -.- NET
+ADM -.-> PG
+
+classDef data fill:#e7f6ef,stroke:#0f766e,stroke-width:2px,color:#0b1220
+classDef port fill:#ffffff,stroke:#0b1220,stroke-width:2px,stroke-dasharray:4 3,color:#0b1220
+classDef note fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+
+class PGB,PG,RDS,MIO,OLL,MAIL,ADM,NET data
+class IN port
+class PGB_N,PG_N,RDS_N,MIO_N,OLL_N,MAIL_N,ADM_N,NET_N note

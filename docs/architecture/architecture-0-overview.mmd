@@ -1,0 +1,58 @@
+flowchart LR
+
+C["`Client
+React · Postman`"]
+D1["`1 · EDGE and SCALE`"]
+D1_N["`Traefik, cloud LB, api containers,
+Docker hosts, worker containers`"]
+D1 -.- D1_N
+D2["`2 · API and MODULES`"]
+D2_N["`middleware chain + 13 modules
+router to service to repository`"]
+D2 -.- D2_N
+D3["`3 · AI and RAG`"]
+D3_N["`gateway, tiers, providers,
+retrieval, cost ledger`"]
+D3 -.- D3_N
+D4["`4 · ASYNC and JOBS`"]
+D4_N["`Celery worker, ingest pipeline,
+generation fan-out, dead letter`"]
+D4 -.- D4_N
+D5["`5 · DATA`"]
+D5_N["`PgBouncer, Postgres + pgvector,
+Redis, MinIO, Ollama`"]
+D5 -.- D5_N
+D6["`6 · OBSERVABILITY`"]
+D6_N["`metrics, logs, traces,
+alerts and SLOs`"]
+D6 -.- D6_N
+
+C -->|"HTTPS"| D1
+D1 -->|"balanced request"| D2
+D2 -->|"AI calls"| D3
+D2 -->|"queued work"| D4
+D2 -->|"owner-scoped SQL"| D5
+D3 -->|"embeddings, chunks, usage"| D5
+D4 -->|"content, status"| D5
+D4 -->|"item generation"| D3
+D1 -.->|"signals"| D6
+D2 -.->|"signals"| D6
+D4 -.->|"signals"| D6
+
+classDef edge fill:#eef2f7,stroke:#64748b,stroke-width:2px,color:#0b1220
+classDef lb fill:#fef9c3,stroke:#ca8a04,stroke-width:3px,color:#0b1220
+classDef api fill:#e8efff,stroke:#2563eb,stroke-width:3px,color:#0b1220
+classDef llm fill:#fff0e6,stroke:#ea580c,stroke-width:3px,color:#0b1220
+classDef asyn fill:#f2ecff,stroke:#7c3aed,stroke-width:3px,color:#0b1220
+classDef data fill:#e7f6ef,stroke:#0f766e,stroke-width:3px,color:#0b1220
+classDef obs fill:#e6f7f7,stroke:#0d9488,stroke-width:3px,color:#0b1220
+classDef note fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+
+class C edge
+class D1 lb
+class D2 api
+class D3 llm
+class D4 asyn
+class D5 data
+class D6 obs
+class D1_N,D2_N,D3_N,D4_N,D5_N,D6_N note

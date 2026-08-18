@@ -1,9 +1,10 @@
 # ProfPlan — System Architecture
 
-> One diagram, one story. Everything the backend does — edge, API, async workers,
-> data stores, the LLM fallback chain and observability — is in the single map
-> below. The sections after it are the narration script: each numbered flow
-> (①…⑧) is an edge you can point at while presenting.
+> Eight diagrams, one story. Everything the backend does — edge, API, async
+> workers, data stores, the LLM fallback chain and observability — is split by
+> stage below, and the dashed boxes at the seams say which diagram a flow
+> continues in. The sections after them are the narration script: each numbered
+> flow (①…⑧) is an edge you can point at while presenting.
 
 - **Repository scope:** backend only (the React frontend lives in its own repo).
 - **Style:** modular monolith, layered / Clean-Architecture-inspired
@@ -18,217 +19,136 @@
 > [`docs/adr/`](../adr/README.md). Read those before changing anything that
 > looks backwards; several of them are, on purpose.
 
-## The whole system in one diagram
+## The architecture, in eight diagrams
+> One big picture stopped being readable at about a hundred nodes, so it is split by
+> stage. Diagram **0** is the map; **1** to **7** are the detail. The dashed boxes
+> marked `◀ from` and `▶ continues in` are the seams: every arrow that leaves one
+> diagram arrives in another.
 
-> The diagram's **source of truth** is [`architecture.mmd`](./architecture.mmd);
-> the block below is a copy of it. Everything else in this folder is generated
-> from it — see [Diagram files](#diagram-files) for which one to open where.
+> All eight are plain Mermaid with no `subgraph`, no `%%` comments and no frontmatter,
+> so each one pastes straight into Excalidraw.
 
-```mermaid
-%% ProfPlan — full backend architecture in one diagram.
-%% Excalidraw-ready: paste into Excalidraw ➜ menu ➜ "Mermaid to Excalidraw".
-%% Legend: solid = sync request/data · thick = synchronous LLM call
-%%         dashed = async (queue, cache, telemetry, provider fallback)
-%% Colors: blue = API · purple = async/Celery · green = data · orange = LLM · teal = observability
+### The whole system in eight diagrams
 
-flowchart LR
+The six blocks and how a request moves between them. Every arrow here is a handoff you can follow into the detail diagrams below.
 
-%% ═══════════════════ EDGE ═══════════════════
-subgraph EDGE["🌐 EDGE"]
-  direction TB
-  CLI["Client<br/>React (Vite) · Postman<br/>HttpOnly cookies<br/>+ X-CSRF-Token"]
-  TRF["Traefik v3.3<br/>:80 → :443 TLS<br/>single entrypoint<br/>X-Forwarded-For<br/>dashboard :8080 off"]
-  CLI -->|"HTTPS"| TRF
-end
+![The whole system in eight diagrams](./architecture-0-overview.png)
 
-%% ═══════════════════ API ═══════════════════
-subgraph API["⚙️ API — FastAPI (image profplan-backend)"]
-  direction LR
+Source: [`architecture-0-overview.mmd`](./architecture-0-overview.mmd)
 
-  subgraph MW["Middleware — outermost ➜ innermost"]
-    direction TB
-    M1["SecurityHeaders<br/>CSP · nosniff · DENY<br/>HSTS in prod"]
-    M2["RequestLogging<br/>1 JSON line/request<br/>user_id · latency · trace_id"]
-    M3["Rate limit (slowapi)<br/>120/min · auth 10 · exp. 20<br/>counters in Redis"]
-    M4["CSRF<br/>double-submit cookie<br/>unsafe methods"]
-    M1 --> M2 --> M3 --> M4
-  end
+### 1 · Edge and scale
 
-  subgraph MOD["Modules — router ➜ service (presentation · application · domain · infrastructure)"]
-    direction TB
-    DISP["APIRouter · prefix /api/v1<br/>uvicorn · UVICORN_WORKERS processes<br/>auth cookie required<br/>(except login / register)"]
-    A_AUTH["auth · register login refresh logout logout-all me<br/>password-reset(+confirm) · email-verification(+confirm)<br/>AuthService — Argon2id · JWT 15min/30d<br/>rotating refresh + reuse detection · Redis lockout"]
-    A_CRUD["domain CRUD · /subjects /plans /modules /academic-items<br/>/academic-item-categories /types /icons /colors<br/>GET /academic-items/{id}/handout.pdf — WeasyPrint<br/>Services — every query scoped to user_id · soft delete"]
-    A_DOC["documents · POST upload → 202 · list · get · /status · delete<br/>UploadService — extension + MIME + magic bytes<br/>100 MB bounded read → 413"]
-    A_RAG["rag · POST /rag/query<br/>RetrievalService — embed → cosine top-k<br/>ALWAYS scoped to owned content_ids"]
-    A_AI["ai · POST /ai/ask · GET /ai/health · PATCH /ai/providers/{name}<br/>AiService — RAG context + prompt safety<br/>« untrusted_document_context »"]
-    A_GEN["generation · POST /plans · POST /plans/{id}/generate<br/>GET /generations/{id}<br/>GenerationService — PlannerAgent + RoadmapReviewer<br/>plan (sync) → materialize → fan-out → poll"]
-    A_AUD["audit · GET /audit-logs (admin)<br/>AuditRecorder — row staged in the SAME<br/>transaction as the business change"]
-    A_OPS["ops · /health · /ready · /metrics · /docs · /static"]
-    DISP --> A_AUTH
-    DISP --> A_CRUD
-    DISP --> A_DOC
-    DISP --> A_RAG
-    DISP --> A_AI
-    DISP --> A_GEN
-    DISP --> A_AUD
-    DISP --> A_OPS
-  end
+Where a request lands, how it is balanced across Docker containers and hosts, and where everything funnels back together.
 
-  M4 ==> DISP
-end
+![1 · Edge and scale](./architecture-1-edge.png)
 
-%% ═══════════════════ LLM ═══════════════════
-subgraph LLM["🤖 LLM GATEWAY — one door for every AI call"]
-  direction TB
-  GW["LLMGateway<br/>semaphore LLM_MAX_CONCURRENCY=5<br/>skips providers disabled in ai_provider<br/>no DB connection held during the call"]
-  CB["CircuitBreaker — state in Redis<br/>closed → open (3 fails) → half-open (30s)<br/>shared by every API/worker replica"]
-  PC["1 · Anthropic Claude<br/>claude-sonnet-5"]
-  PO["2 · OpenAI<br/>gpt-4o"]
-  PGM["3 · Google Gemini<br/>gemini-2.5-flash"]
-  PL["4 · Ollama (local)<br/>llama3.2:3b<br/>never disableable"]
-  GW --- CB
-  GW ==> PC
-  PC -.->|"fail · no key · circuit open"| PO
-  PO -.->|"fail"| PGM
-  PGM -.->|"fail"| PL
-  PL -.->|"all failed → 503"| GW
-end
+Source: [`architecture-1-edge.mmd`](./architecture-1-edge.mmd)
 
-%% ═══════════════════ DATA ═══════════════════
-subgraph DAT["🗄️ DATA & MODELS — internal network only"]
-  direction TB
-  PGB["PgBouncer :6432<br/>transaction pooling<br/>asyncpg prepared statements OFF"]
-  PG["PostgreSQL 17 + pgvector<br/>users · providers · user_providers · refresh_tokens<br/>auth_logs · audit_logs · subjects · plans · modules<br/>academic_items · academic_item_category(+_types)<br/>icons · colors · verification_tokens<br/>document · document_content · document_format<br/>plan_generation · plan_document · ai_provider<br/>chunks vector(1024) · HNSW cosine<br/>SQLAlchemy 2.0 async · Alembic migrations"]
-  RDS["Redis 8<br/>db0 cache · db1 Celery broker · db2 results<br/>db3 rate limit · login lockout<br/>embedding cache (7d) · circuit-breaker keys"]
-  MIO["MinIO — S3<br/>bucket profplan<br/>raw files: {subject_id}/{uuid}.ext"]
-  OLL["Ollama<br/>bge-m3 embeddings (1024-d)<br/>llama3.2:3b chat fallback"]
-  MAIL["Mailpit :8025<br/>SMTP :1025 — dev inbox"]
-  ADM["Adminer :8081 — DB UI, dev profile"]
-end
+### 2 · API and modules
 
-%% ═══════════════════ ASYNC ═══════════════════
-subgraph ASY["🧵 ASYNC — Celery worker (same image as the API)"]
-  direction TB
-  WRK["Celery worker · task_acks_late · prefetch 1<br/>retry 15s → 30s → 60s → FAILED<br/>NullPool engine (event-loop safe)"]
-  subgraph PIPE["task documents.ingest — RAG pipeline · INDEXED = no-op, PROCESSING taken over when stale"]
-    direction LR
-    P1["fetch object"] --> P2["parse → Markdown<br/>pdf·docx·pptx<br/>xlsx·txt·md"] --> P3["header-aware chunking<br/>~1000 chars + overlap<br/>total published"] --> P4["embed bge-m3 (1024-d)<br/>batches of 8 · 300s each<br/>count published per batch"] --> P5["index in pgvector<br/>status → INDEXED<br/>failure → FAILED + reason"]
-  end
-  GENT["task generation.run_item — one per academic item<br/>RAG context → LLM → content.markdown<br/>recompute run → RUNNING / COMPLETED / PARTIAL"]
-  MAILT["task emails.send<br/>password reset · email verification"]
-  FLW["Flower :5555 — task/queue/failure monitor"]
-  WRK --> P1
-  WRK --> GENT
-  WRK --> MAILT
-end
+The middleware chain in the order it actually runs, and the thirteen modules behind the router.
 
-%% ═══════════════════ OBSERVABILITY ═══════════════════
-subgraph OBS["📈 OBSERVABILITY — profile: observability"]
-  direction LR
-  OTC["OTel Collector<br/>OTLP :4317 / :4318"] --> TMP["Tempo<br/>traces"]
-  PTL["Promtail<br/>docker socket"] --> LOK["Loki<br/>logs"]
-  NEX["node-exporter<br/>host CPU/mem/disk"] --> PRM["Prometheus :9090<br/>metrics · alert rules"]
-  TMP --> GRF["Grafana :3000<br/>metrics + logs + traces<br/>datasources provisioned"]
-  LOK --> GRF
-  PRM --> GRF
-  PRM -->|"fired alerts"| ALM["Alertmanager :9093<br/>routing · inhibit · Watchdog"]
-end
+![2 · API and modules](./architecture-2-api.png)
 
-%% ═══════════════════ FLOWS ═══════════════════
-TRF ==>|"Host: api.localhost"| M1
+Source: [`architecture-2-api.mmd`](./architecture-2-api.mmd)
 
-A_AUTH -->|"① users · refresh_tokens · auth_logs"| PGB
-A_AUTH -.->|"① login attempt counter"| RDS
-A_AUTH -.->|"① enqueue emails.send"| RDS
-MAILT  -->|"SMTP"| MAIL
-A_CRUD -->|"② owner-scoped SQL"| PGB
-A_AUD  -->|"⑧ audit_logs (same transaction)"| PGB
+### 3 · AI and RAG
 
-A_DOC  -->|"③ put_object"| MIO
-A_DOC  -->|"③ document row = PENDING"| PGB
-A_DOC  -.->|"③ enqueue documents.ingest"| RDS
-RDS    -.->|"③ ④ deliver task"| WRK
-P1     -->|"③ file bytes"| MIO
-P4     -->|"③ /api/embed"| OLL
-P4     -.->|"③ embedding cache"| RDS
-P5     -->|"③ document_content + chunks"| PG
+The one door every AI call goes through: tiers, providers, the planner and its reviewer, retrieval, and what each call cost.
 
-A_GEN  ==>|"④ planner: draft → eval → repair"| GW
-A_GEN  -->|"④ plan_generation + modules + items (PENDING)"| PGB
-A_GEN  -.->|"④ fan-out: 1 task per item"| RDS
-GENT   ==>|"④ generate item"| GW
-GENT   -->|"④ item content + run status"| PG
+![3 · AI and RAG](./architecture-3-ai.png)
 
-A_RAG  -->|"⑤ embed question"| OLL
-A_RAG  -->|"⑤ cosine top-k over chunks"| PGB
-A_AI   ==>|"⑥ answer grounded in context"| GW
-CB     -.->|"⑥ breaker keys"| RDS
+Source: [`architecture-3-ai.mmd`](./architecture-3-ai.mmd)
 
-M2     -.->|"⑦ OTLP spans (OTEL_ENABLED)"| OTC
-WRK    -.->|"⑦ OTLP spans"| OTC
-M2     -.->|"⑦ stdout JSON logs"| PTL
-WRK    -.->|"⑦ stdout JSON logs"| PTL
-A_OPS  -.->|"⑦ /metrics scrape"| PRM
-FLW    -.-> RDS
-PGB    -->|"pooled sessions"| PG
-ADM    -.-> PG
+### 4 · Async and jobs
 
-%% ═══════════════════ STYLE ═══════════════════
-classDef edge  fill:#eef2f7,stroke:#64748b,stroke-width:2px,color:#0b1220
-classDef api   fill:#e8efff,stroke:#2563eb,stroke-width:2px,color:#0b1220
-classDef asyn  fill:#f2ecff,stroke:#7c3aed,stroke-width:2px,color:#0b1220
-classDef data  fill:#e7f6ef,stroke:#0f766e,stroke-width:2px,color:#0b1220
-classDef llm   fill:#fff0e6,stroke:#ea580c,stroke-width:2px,color:#0b1220
-classDef obs   fill:#e6f7f7,stroke:#0d9488,stroke-width:2px,color:#0b1220
+The ingestion pipeline, the generation fan-out, and where work goes when it runs out of retries.
 
-class CLI,TRF edge
-class DISP,M1,M2,M3,M4,A_AUTH,A_CRUD,A_DOC,A_RAG,A_AI,A_GEN,A_AUD,A_OPS api
-class WRK,P1,P2,P3,P4,P5,GENT,MAILT,FLW asyn
-class PGB,PG,RDS,MIO,OLL,MAIL,ADM data
-class GW,CB,PC,PO,PGM,PL llm
-class OTC,TMP,PTL,LOK,PRM,ALM,NEX,GRF obs
-```
+![4 · Async and jobs](./architecture-4-async.png)
 
-**Reading the diagram**
+Source: [`architecture-4-async.mmd`](./architecture-4-async.mmd)
 
-| Notation | Meaning |
-|---|---|
-| `──▶` solid | synchronous request / data access (the caller waits) |
-| `══▶` thick | synchronous **LLM** call (the expensive path) |
-| `- - ▶` dashed | asynchronous: queue enqueue/deliver, cache, telemetry, fallback |
-| ①…⑧ | the eight flows narrated below |
-| Colors | blue = API · purple = async/Celery · green = data · orange = LLM · teal = observability |
+### 5 · Data
 
----
+What is stored, where, and why none of it is reachable from outside the internal network.
+
+![5 · Data](./architecture-5-data.png)
+
+Source: [`architecture-5-data.mmd`](./architecture-5-data.mmd)
+
+### 6 · Observability
+
+Three signals, how they link to each other, and the alerts and SLOs on top.
+
+![6 · Observability](./architecture-6-observability.png)
+
+Source: [`architecture-6-observability.mmd`](./architecture-6-observability.mmd)
+
+### 7 · Embeddings and retrieval
+
+What an embedding actually is, what it costs in bytes and in minutes, and the
+arithmetic behind hybrid search — cosine on one side, `ts_rank_cd` on the other,
+fused by rank. Read it next to **3 · AI and RAG**: that one is the path, this one
+is the maths.
+
+![7 · Embeddings and retrieval](./architecture-7-embeddings.png)
+
+Source: [`architecture-7-embeddings.mmd`](./architecture-7-embeddings.mmd)
+
 
 ## Diagram files
 
 | File | Open it in | Notes |
 |---|---|---|
-| [`architecture.mmd`](./architecture.mmd) | Mermaid (docs, GitHub, this file) | **Source of truth.** Grouped with `subgraph`, so it renders best. |
-| [`architecture.svg`](./architecture.svg) · [`architecture.png`](./architecture.png) | Slides, print | Rendered from the `.mmd` (SVG is vector — zoom without blur; PNG is 4800 px). |
-| [`architecture.excalidraw`](./architecture.excalidraw) | **Excalidraw** (File ➜ Open) | Ready-made scene: 47 boxes, 60 bound arrows, one named frame per layer. |
-| [`architecture-excalidraw.mmd`](./architecture-excalidraw.mmd) | Excalidraw ➜ ☰ ➜ *Mermaid to Excalidraw* | Same diagram in the subset the importer actually supports (see below). |
-| [`generate_excalidraw.py`](./generate_excalidraw.py) | `python3 generate_excalidraw.py` | Rebuilds the `.excalidraw` scene from the Excalidraw `.mmd`. |
+| `architecture-0-overview.mmd` … `-7-embeddings.mmd` | Mermaid · Excalidraw | **Source of truth**, one file per stage. |
+| the matching `.png` of each | Slides, print | Rendered at 3000 px. |
+| [`presentation/`](./presentation/) | Slides, whiteboard | Seven single-topic diagrams for *talking through* the system — see below. |
 
-**Why two Mermaid files.** Excalidraw's *Mermaid to Excalidraw* converter cannot
-handle three things this diagram uses, and it fails silently — it drops back to
-pasting one flat, uneditable **image** instead of shapes:
+Re-render one after editing it:
 
-1. **`subgraph`** — any subgraph raises `SubGraph element not found`. That alone
-   is what turns the import into an image.
-2. **`%%` comments** — they get concatenated and break the parser.
-3. **`<br/>`** — printed literally as text; line breaks have to be written as
-   Mermaid markdown strings (backticks) instead.
+```bash
+cd docs/architecture
+npx @mermaid-js/mermaid-cli -i architecture-3-ai.mmd -o architecture-3-ai.png -w 3000 -b white
+```
 
-So `architecture-excalidraw.mmd` has no subgraphs, no comments and backtick
-labels. The trade-off is layout: without subgraphs the auto-layout scatters the
-boxes, which is exactly what `generate_excalidraw.py` fixes — it reads that file
-and lays the nodes out in layered columns with a frame per layer.
+> **Why seven files and not one.** The single diagram reached ~103 nodes and 135
+> edges, and at that size no auto-layout produces something readable: with the
+> `subgraph` groupings removed for Excalidraw compatibility, dagre had nothing to
+> anchor against and routed edges across the whole canvas. Split by stage, each
+> diagram holds 7–19 nodes, which is the range where the layout engine does good
+> work. The `◀ from` / `▶ continues in` boxes are what keeps them one story.
+
+**Presentation diagrams.** The A-series above answers "what is in it". These answer
+"why is it like that": every box carries the decision and its reason, so they are
+meant to be pointed at rather than read out.
+
+| File | Covers |
+|---|---|
+| `D2-clean-architecture` | The four layers, the dependency rule, the ownership invariant, one request through the middleware chain |
+| `D3-ai-and-rag` | Ingestion, retrieval, the one gateway, the planner, citations, cost |
+| `D4-observability` | The three signals, how they link, and the alerting behind them |
+| `D5-scale` | Harness, measured numbers, the coefficient, the arithmetic, four levels of load spreading, what breaks first |
+| `D6-cost` | The seven cost decisions, and the three places the cheap option was refused |
+| `D7-resilience` | Failure mechanisms, behaviour at the edge of capacity, and the known flaw |
+| `D8-security` | Identity, untrusted input, isolation, supply chain, audit |
+
+Render or re-render any of them with:
+
+```bash
+cd docs/architecture/presentation
+npx @mermaid-js/mermaid-cli -i D5-scale.mmd -o D5-scale.png -w 3600 -b white
+```
+
+> **Keep these pasteable, if you edit them.** Excalidraw's Mermaid importer
+> chokes on `subgraph`, `%%` comments, YAML frontmatter, invisible `~~~` links and
+> `<br/>`, and it fails *silently* — it drops back to pasting one flat image
+> instead of shapes. Every diagram here avoids all five: groups are header nodes
+> joined to their first child by a dotted link, and line breaks are Mermaid
+> markdown strings (backticks). Verify a change renders with `mermaid-cli` before
+> committing it; a parse error there is a silent failure in Excalidraw.
 
 **Going deeper than the map.** [`docs/study/`](../study/) holds a 45-page LaTeX
-guide to every technology on this diagram — what it is, how it works, what it
+guide to every technology on these diagrams — what it is, how it works, what it
 does *here*, a 30-second explanation of each, and the follow-up questions.
 Build it with `pdflatex profplan-tech-guide.tex` (twice).
 
@@ -236,9 +156,9 @@ Regenerate everything after editing the diagram:
 
 ```bash
 cd docs/architecture
-npx @mermaid-js/mermaid-cli -i architecture.mmd -o architecture.svg
-npx @mermaid-js/mermaid-cli -i architecture.mmd -o architecture.png -w 4800 -b white
-python3 generate_excalidraw.py     # after mirroring the change in the Excalidraw .mmd
+for f in architecture-*.mmd; do
+  npx @mermaid-js/mermaid-cli -i "$f" -o "${f%.mmd}.png" -w 3000 -b white
+done
 ```
 
 ---
@@ -255,6 +175,22 @@ user's sessions are killed. Failed logins increment a per-account counter in
 Redis (lockout after 5 in 5 min); every event lands in `auth_logs`.
 There is no `Authorization: Bearer` header and no token in `localStorage` —
 which is exactly why the CSRF middleware exists (④ of the middleware chain).
+
+Password reset and email verification are both request/confirm pairs backed by
+`verification_tokens`, delivered through the `emails.send` task (Mailpit catches
+them in development).
+
+**Sign-in with Google** is available at `GET /auth/oauth/google` and its
+callback. Two decisions worth naming. The routes are registered **only when the
+integration is configured** — a disabled feature that still answers on its URL is
+one you will forget is disabled — and `GET /auth/providers` reports what is
+actually available, so the frontend discovers it from the server instead of
+hardcoding a button. The OAuth **state lives in Redis and is single-use**: it
+stops login-CSRF (an attacker completing the dance and landing you in *their*
+account), and Redis rather than process memory because with more than one replica
+the callback frequently does not land on the process that started the flow. A
+successful callback links or creates the account and issues **the same cookies**
+as a password login, so nothing downstream knows which door was used.
 
 ### ② Domain CRUD — owner-scoped by construction
 `subjects → plans → modules → academic_items` is the teaching hierarchy;
@@ -292,10 +228,15 @@ its reason, which is both what the page reads and what tells the retry it may
 take the work. Transient failures retry with backoff (15/30/60s).
 
 ### ④ Plan generation — sync planner, async fan-out
-`POST /plans` is the flagship flow, in this exact order:
+`POST /plans/{plan_id}/generate` is the flagship flow, in this exact order:
 
 1. **Validate** the selected documents belong to the user (they scope the RAG
    context to that plan's material).
+1b. **`ensure_budget`** — refuse the run if the account has spent its monthly AI
+   budget. Checked **at the door, once per plan**, never per LLM call: stopping
+   mid-run leaves a plan with three activities written and five empty, which has
+   already spent those tokens and delivers nothing. The overshoot is bounded by
+   one plan, and one plan is cents.
 2. **Planner agent runs synchronously, before anything is persisted** —
    `draft → evaluate → repair`. Code checks always run; the **LLM judge** only
    runs when the code checks flag something or the retrieved context was too
@@ -309,7 +250,47 @@ take the work. Transient failures retry with backoff (15/30/60s).
    retrieves its own RAG context, calls the gateway and writes back
    `content.markdown`, then recomputes the run:
    `RUNNING → COMPLETED` (all ok) / `PARTIAL` (some failed) / `FAILED`.
+   Each worker also stores the passages it was given in `academic_item_source`.
+   `PARTIAL` is deliberate: one failed item must not destroy the other thirty-nine.
 5. **Poll** `GET /generations/{id}` and watch the items fill in.
+
+### ④b What it cost — metering, and the budget it enforces
+A provider returns a `Completion(text, model, TokenUsage)`, not a string. That
+distinction is the whole feature: the same plan costs half a cent or thirty
+depending on **which** model in the fallback chain answered, and a string cannot
+say which.
+
+`UsageLedger` sums those across a whole run — planner call, optional repair,
+optional judge, then one call per item, spread over several worker processes. It
+is carried in a **`ContextVar`** rather than threaded through every signature,
+for the same reason a request id is: it is ambient to the work, and a parameter
+four functions forward without reading is one the fifth will forget. `ContextVar`
+is the right tool and not a global — asyncio gives each task its own copy, so two
+plans drafted at the same moment cannot add into each other's total.
+
+A response that arrives **without** usage is counted as `LLM_UNPRICED`, never
+estimated: a guessed token count puts a number nobody can act on into a cost
+report. Totals land in `plan_generation_model_usage` and are read back at
+`GET /generations/usage/me` and `GET /generations/usage` (admin). The window is
+the **calendar month in UTC** — a rolling window would be fairer and impossible
+to explain, and "it resets on the first" is a sentence a person can act on.
+
+### ④c Citations and handouts — why the output is defensible
+`GET /academic-items/{id}/sources` returns the passages the model **was shown**,
+stored at generation time — not a search re-run afterwards. Rank, document,
+section, excerpt, and a similarity converted from pgvector's cosine distance at
+the edge (an exact conversion, not a flattering rescale). An **empty list is a
+real answer**, not a missing feature: that item was written with no document
+behind it, which is exactly what a reader needs to know before trusting a
+confident paragraph.
+
+`GET /academic-items/{id}/handout.pdf` renders the generated Markdown to A4 via
+**Markdown → HTML → WeasyPrint**, because that second step is real CSS layout:
+page size, page numbers, and page breaks that will not split a table row from its
+header. One honest limitation: there is no formula engine, so LaTeX between
+dollar signs has its delimiters stripped and is set in italics rather than
+silently dropped — and the pattern deliberately skips `$` followed by a space,
+which in Portuguese is a currency amount, not a formula.
 
 ### ⑤ Retrieval (RAG read path)
 `POST /rag/query` embeds the question with bge-m3 and runs a **cosine** search
@@ -318,19 +299,72 @@ user owns — `ChunkRepository.search_similar` refuses to run without a scope.
 That is the tenant-isolation guarantee, enforced in the repository, not in a
 caller that could forget.
 
-### ⑥ LLM gateway — fallback chain + circuit breaker
-One component fronts every AI call: **Claude → OpenAI → Gemini → Ollama**.
-Each provider is wrapped in a **circuit breaker whose state lives in Redis**, so
-every API and worker process shares one view of "this provider is down" instead
-of each hammering a dead endpoint. A provider with no key, disabled by an admin
-(`ai_provider` table), or with an open circuit is skipped. Outbound calls are
-capped by a process-wide semaphore, and the request **does not hold a pooled DB
-connection** during the LLM call — a fallback chain can run for minutes and
-would otherwise starve every other route. If all four fail: `503`.
+### ⑥ LLM gateway — two tiers, two chains, one door
+One component fronts every AI call, and it routes by **tier** before it routes by
+provider. That split is the largest cost decision in the system, so it comes
+first.
+
+**A plan is not one kind of work.** Deciding the roadmap is *one* call that shapes
+everything downstream: a bad roadmap yields forty excellent activities about the
+wrong things. Writing *one* activity is bulk drafting against a decision already
+made — and it is where the tokens are, one long-output call per item. Paying
+frontier prices for the bulk to protect the single decision is the wrong way
+round, so the two are separated and **each tier gets its own chain**:
+
+| Tier | The calls | Chain (`LLM_*_CHAIN`) |
+|---|---|---|
+| `STANDARD` | roadmap, its repair, the judge | `claude, bedrock, openai, gemini, ollama` |
+| `FAST` | one academic item | `gemini, bedrock, openai, ollama` |
+
+Two things in those rows are deliberate. The **order differs** — Gemini leads the
+fast chain because it is cheap and quick, which is the right profile for writing
+against a script that already exists. And **Claude is absent from the fast
+chain**: leaving it in would make a forty-item plan forty frontier calls, and the
+bill for a plan would be dominated by its least difficult work.
+
+The choice goes one level deeper. Each provider carries **two models**, and the
+tier follows the request all the way down the fallback chain — a `FAST` call that
+lands on OpenAI gets `gpt-4o-mini`, not `gpt-4o`:
+
+| Provider | `STANDARD` | `FAST` |
+|---|---|---|
+| Anthropic (direct) | `claude-sonnet-5` | `claude-haiku-4-5` |
+| Amazon Bedrock | `us.anthropic.claude-sonnet-5` | `us.amazon.nova-lite-v1:0` |
+| OpenAI | `gpt-4o` | `gpt-4o-mini` |
+| Gemini | `gemini-2.5-flash` | `gemini-flash-lite-latest` |
+| Ollama (local) | `llama3.2:3b` | *(none)* |
+
+A provider with **no cheap model configured answers everything with its one
+model**. That is deliberate: falling back to the expensive model is a larger
+bill, and falling back to nothing is a plan that never arrives.
+
+**Why Bedrock sits second in both chains.** It is the *same model by a different
+commercial path* — the Sonnet Anthropic sells directly is the Sonnet AWS sells
+through Bedrock. So a vendor outage or a blown quota fails over without changing
+*model*, which is a different kind of resilience from falling through to Gemini.
+It speaks the **Converse** API (model-agnostic shape, uniform `usage` block) over
+a **Bedrock API key in a Bearer header** rather than SigV4 — no boto3, no
+credential chain, no request signing, and a thirty-line adapter instead of a
+dependency with its own opinions about threads. One trap is written into the
+code: Anthropic's newer models are `INFERENCE_PROFILE` only, so
+`anthropic.claude-sonnet-5` is not callable and `us.anthropic.claude-sonnet-5`
+is — and getting it wrong answers "not available for this account", which reads
+like a permissions problem and is not one.
+
+**The rest of the gateway.** Each provider is wrapped in a **circuit breaker whose
+state lives in Redis**, so every API and worker process shares one view of "this
+provider is down" instead of each hammering a dead endpoint. A provider with no
+key, disabled by an admin (`ai_provider` table), or with an open circuit is
+skipped. Outbound calls are capped by a process-wide semaphore, and the request
+**does not hold a pooled DB connection** during the LLM call — a fallback chain
+can run for minutes and would otherwise starve every other route. If the whole
+chain fails: `503`.
+
 Runtime control: `GET /ai/health` (per-provider status), `PATCH
-/ai/providers/{name}` (admin). Two invariants: Ollama can never be disabled, and
-at least one non-Ollama provider must stay active. **API keys are never stored
-in the DB** — they stay in the environment.
+/ai/providers/{name}` (admin). Two invariants: Ollama can never be disabled (it
+is the floor that guarantees the chain always ends somewhere), and at least one
+non-Ollama provider must stay active. **API keys are never stored in the DB** —
+they stay in the environment.
 
 ### ⑦ Observability — three signals, one pane
 Every process logs single-line **JSON** to stdout; **Promtail** ships it to
@@ -384,6 +418,63 @@ CORS is a **development-only** concern: in production everything is served
 behind Traefik on a single origin, so the middleware isn't even added.
 
 ---
+
+## The edge: routing and load balancing
+
+Traefik is the single entrypoint, and it is also the load balancer. Worth being
+explicit about, because it is what turns "750 users per core, measured" into a
+capacity number instead of a curiosity.
+
+**Discovery is dynamic.** The API service carries `traefik.enable=true` and
+`traefik.http.services.api.loadbalancer.server.port=8000`. Traefik watches the
+Docker socket, so a container carrying those labels joins the pool when it comes
+up and leaves when it goes down. Scaling from one replica to four is a compose
+scale command, not a config edit — deliberately, because any scaling step that
+requires editing a file is a step somebody performs wrong at 2am.
+
+**Round-robin, and that is the right default here.** Requests in this API cost
+roughly the same: owner-scoped, paginated CRUD. When per-request cost is uniform,
+round-robin distributes as well as anything cleverer and keeps no state. Least-
+connections earns its keep when traffic is heterogeneous — a route answering in
+5 ms next to one holding a connection for two minutes — which is not this shape.
+
+**No sticky sessions, on purpose.** Traefik offers them; here they would be a bug.
+The session is a JWT in a cookie and no replica holds anything about the caller,
+which is exactly the property that lets throughput be bought with copies. Pinning
+a user to a replica throws that away: balance skews as sessions accumulate, a
+deploy drops the sessions pinned to that container, and scaling in becomes
+painful. Sticky sessions fix server-side session state. There is none to fix.
+
+**Two gaps, stated rather than discovered.**
+
+1. **No `healthCheck` on the service.** Traefik will send traffic to any container
+   that is up, and "up" is not "ready": a fresh container has an empty pool and no
+   database connection yet, so it accepts the request and fails it. The readiness
+   probe that checks Postgres and Redis already exists and the balancer is not
+   using it. Wiring it is a few lines, and it is the first thing to do before
+   running more than one replica — it also turns a rolling deploy from a window of
+   errors into a non-event.
+2. **Two routing paths that scale differently.** The label path discovers
+   containers dynamically; `docker/traefik/dynamic.yml`, which serves the HTTPS
+   router, hardcodes a single server (`http://api:8000`) and leans on Docker DNS.
+   Scale today and HTTP balances while HTTPS does not.
+
+**Above Traefik.** Traefik is not the ceiling. A real deployment puts a cloud
+L4/L7 balancer in front of several Traefik instances across availability zones,
+which makes the distribution three-tiered: DNS or anycast picks the region, the
+cloud balancer picks the zone and the Traefik instance, Traefik picks the
+container. The ~250 containers in [`perf/SCALING-80K.md`](../../perf/SCALING-80K.md)
+assume exactly that topology — and none of it changes application code, which is
+what being stateless bought.
+
+**Balancing happens at four layers, not one:**
+
+| Layer | Distributes | Mechanism |
+|---|---|---|
+| Traefik | across containers | round-robin over label-discovered replicas |
+| uvicorn workers | across processes | the kernel handing accepts to a shared listen socket |
+| PgBouncer | *concentrates* | thousands of client connections onto 100–200 real ones |
+| Celery | across workers | queue with `prefetch 1` — the busy worker gets no backlog |
 
 ## Deployment topology
 
