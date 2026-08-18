@@ -57,8 +57,37 @@ jobs:
       PLAN_GENERATION_ENABLED: "false"
       # Disable per-IP limiting so the shared test client isn't throttled.
       RATE_LIMIT_ENABLED: "false"
+      # Object storage for the upload flow. Published on the runner rather than
+      # reachable by service name, which is why this is not `minio:9000`.
+      MINIO_ENDPOINT: localhost:9000
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_SECURE: "false"
+      # The broker has its own URL and defaults to the compose hostname, which
+      # does not resolve on the runner: the upload enqueues a task.
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/2
+      # Nothing collects traces here, and the exporter retries loudly for a
+      # host that will never resolve.
+      OTEL_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
+      # Not a service container: those cannot pass a command, and `minio/minio`
+      # needs `server /data`. Same image the compose file uses, so the upload
+      # tests run against real object storage instead of a stand-in.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio server /data
+          for _ in $(seq 30); do
+            if curl -sf http://localhost:9000/minio/health/live >/dev/null; then
+              echo "MinIO is up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "MinIO did not become healthy"; docker logs minio; exit 1
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
