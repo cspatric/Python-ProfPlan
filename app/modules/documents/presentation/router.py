@@ -66,15 +66,24 @@ async def upload_document(
 
 @router.get("", response_model=list[DocumentResponse])
 async def list_documents(
-    subject_id: UUID,
     user: CurrentUser,
     service: DocumentServiceDep,
+    subject_id: UUID | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> list[DocumentResponse]:
-    """List the documents of a subject owned by the user."""
-    documents = await service.list_by_subject(
-        user_id=user.uuid, subject_id=subject_id, limit=limit, offset=offset
+    """List documents owned by the user.
+
+    With `subject_id`, one subject's documents. Without it, everything the
+    account owns — which is what the library screen draws, grouped by subject
+    on the client from the `subject_id` each row already carries.
+    """
+    documents = (
+        await service.list_by_subject(
+            user_id=user.uuid, subject_id=subject_id, limit=limit, offset=offset
+        )
+        if subject_id is not None
+        else await service.list_all(user_id=user.uuid, limit=limit, offset=offset)
     )
     return [DocumentResponse.model_validate(d) for d in documents]
 

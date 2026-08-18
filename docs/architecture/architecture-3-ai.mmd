@@ -1,0 +1,118 @@
+flowchart LR
+
+IN2["`◀ from 2 · API`"]
+
+GW["`LLMGateway`"]
+GW_N["`one door: no module calls a provider SDK
+semaphore LLM_MAX_CONCURRENCY=5, I rate-limit myself
+skips providers with no key / disabled / circuit open
+holds NO pooled DB connection during the call
+returns Completion(text, model, TokenUsage)`"]
+GW -.- GW_N
+
+TIER["`Tier · the cost decision`"]
+TIER_N["`a plan is not one kind of work
+STANDARD = the call that DECIDES
+roadmap · repair · judge, 1 per plan
+chain: claude, bedrock, openai, gemini, ollama
+FAST = bulk drafting against that decision
+one activity, N per plan, most of the tokens
+chain: gemini, bedrock, openai, ollama
+Claude absent from FAST on purpose: 40 frontier
+calls would let the bulk dominate the bill`"]
+TIER -.- TIER_N
+
+CB["`CircuitBreaker`"]
+CB_N["`state in Redis, not process memory
+closed to open (3 fails) to half-open (30s)
+the whole fleet shares one view of down`"]
+CB -.- CB_N
+
+LED["`UsageLedger`"]
+LED_N["`ContextVar, one per asyncio task
+sums planner + repair + judge + 1 call/item
+priced per model · missing usage = UNPRICED
+monthly budget per account, checked at the door`"]
+LED -.- LED_N
+
+PC["`1 Anthropic`"]
+PC_N["`std claude-sonnet-5 · fast claude-haiku-4-5`"]
+PC -.- PC_N
+PBR["`2 Amazon Bedrock`"]
+PBR_N["`Converse API · API key + Bearer, no SigV4/boto3
+same model, different commercial path
+std us.anthropic.claude-sonnet-5
+fast us.amazon.nova-lite-v1:0
+us.* inference profile = regional rate, +10%`"]
+PBR -.- PBR_N
+PO["`3 OpenAI`"]
+PO_N["`std gpt-4o · fast gpt-4o-mini`"]
+PO -.- PO_N
+PGM["`4 Google Gemini`"]
+PGM_N["`std gemini-2.5-flash · fast gemini-flash-lite
+leads the FAST chain: cheap and quick`"]
+PGM -.- PGM_N
+PL["`5 Ollama · the floor`"]
+PL_N["`llama3.2:3b · no fast model configured
+answers everything with its one model
+never disableable`"]
+PL -.- PL_N
+
+PLAN["`PlannerAgent`"]
+PLAN_N["`draft, evaluate, repair, all STANDARD tier
+code checks always run, they are free
+LLM judge only when flagged or context weak
+clean plan = 1 call · worst case 3
+runs BEFORE anything is persisted:
+an invalid roadmap leaves no orphan rows`"]
+PLAN -.- PLAN_N
+
+REV["`RoadmapReviewer`"]
+REV_N["`a separate agent on purpose:
+a model reviewing itself agrees with itself`"]
+REV -.- REV_N
+
+RET["`Retrieval`"]
+RET_N["`hybrid: vector (cosine) + lexical (tsvector)
+fused by RRF, by rank not by score
+scales differ, ranks are comparable
+ALWAYS scoped to owned ids, or it raises
+measured: recall@1 0.77 hybrid vs 0.62 vector`"]
+RET -.- RET_N
+
+SAFE["`Prompt safety`"]
+SAFE_N["`retrieved text wrapped as untrusted context
+every system prompt treats it as DATA`"]
+SAFE -.- SAFE_N
+
+IN4["`◀ from 4 · one task per item, FAST tier`"]
+OUT5["`▶ continues in 5 · DATA`"]
+OUT4["`▶ continues in 4 · fan-out`"]
+
+IN2 ==> GW
+GW --- TIER
+GW --- CB
+GW --- LED
+GW ==> PC
+PC -.->|"fail · no key · open"| PBR
+PBR -.->|"fail"| PO
+PO -.->|"fail"| PGM
+PGM -.->|"fail"| PL
+PL -.->|"all failed, 503"| GW
+IN2 ==> PLAN
+PLAN --> REV
+PLAN ==>|"STANDARD tier"| GW
+IN4 ==>|"FAST tier"| GW
+PLAN --> OUT4
+RET --> GW
+SAFE --> RET
+RET -->|"embed + search"| OUT5
+LED -->|"tokens and USD per model"| OUT5
+
+classDef llm fill:#fff0e6,stroke:#ea580c,stroke-width:2px,color:#0b1220
+classDef port fill:#ffffff,stroke:#0b1220,stroke-width:2px,stroke-dasharray:4 3,color:#0b1220
+classDef note fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+
+class GW,TIER,CB,LED,PC,PBR,PO,PGM,PL,PLAN,REV,RET,SAFE llm
+class IN2,IN4,OUT4,OUT5 port
+class GW_N,TIER_N,CB_N,LED_N,PC_N,PBR_N,PO_N,PGM_N,PL_N,PLAN_N,REV_N,RET_N,SAFE_N note

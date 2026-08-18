@@ -41,7 +41,10 @@ async def generate_plan(
     await service.ensure_budget(user.uuid)
 
     run, items = await service.start(
-        user_id=user.uuid, plan_id=plan_id, teacher_input=payload.input
+        user_id=user.uuid,
+        plan_id=plan_id,
+        teacher_input=payload.input,
+        language=payload.language,
     )
     for item in items:
         run_item.delay(str(item.uuid))

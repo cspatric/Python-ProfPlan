@@ -1,0 +1,65 @@
+flowchart LR
+
+ROW2["`💰 …and in the AI path, where the money actually goes`"]
+  K4["`4 · OLLAMA LAST IN THE CHAIN
+one piece, THREE problems:
+· no total outage from a vendor failure
+· no lock-in — none is irreplaceable
+· zero API cost in dev and CI`"]
+ROW2 -.- K4
+  K6["`6 · THE PLANNER KNOWS IT IS EXPENSIVE
+code checks always (free)
+LLM judge ONLY when flagged
+or the context came back weak
+clean plan = 1 call · worst case 3`"]
+  K7["`7 · IT METERS ITSELF
+the part most systems skip
+provider returns Completion(text, model,
+TokenUsage), not a string: the SAME plan
+costs 0.5¢ or 30¢ depending which model
+answered — a string cannot say which
+UsageLedger sums planner + repair +
+judge + one call per item`"]
+  K4 -.- K6 -.- K7 -.- K8
+  K8["`BUDGET — checked AT THE DOOR,
+once per plan, never mid-run
+stopping halfway spends the tokens
+and delivers a half-written plan
+overshoot bounded by one plan = cents
+calendar month UTC: 'it resets on the first'
+is a sentence a person can act on`"]
+
+ROW1["`💰 WHERE CHEAP AND CORRECT AGREED — infrastructure`"]
+  K1["`1 · LOCAL EMBEDDINGS — bge-m3 on Ollama
+ingestion is the HIGH-VOLUME side:
+one document = dozens/hundreds of chunks
+zero marginal cost AND the teacher's
+material never leaves the network`"]
+ROW1 -.- K1
+  K2["`2 · EMBEDDING CACHE — Redis, 7d TTL
+the same text is never
+embedded twice`"]
+  K3["`3 · SELF-HOSTED OBSERVABILITY
+Prometheus · Loki · Tempo · Grafana
+Alertmanager · node-exporter · Promtail
+the commercial equivalent at this
+log volume is a four-figure monthly line`"]
+  K1 -.- K2 -.- K3 -.- K5
+  K5["`5 · MINIO INSTEAD OF S3
+no per-request cost, no egress cost
+API-compatible → migration is an
+endpoint and a credential,
+not a rewritten adapter`"]
+
+PAID["`…AND WHERE THEY DISAGREED, I PAID
+
+PgBouncer — a container that buys nothing today ·  Full tracing — containers and complexity
+Argon2 — expensive on purpose; I did NOT lower the cost parameter to get a nicer benchmark
+
+a list of savings without this line is just a list of corners cut`"]
+
+classDef cost fill:#e7f6ef,stroke:#0f766e,stroke-width:2px,color:#0b1220
+classDef note fill:#fef9c3,stroke:#ca8a04,stroke-width:3px,color:#0b1220
+
+class K1,K2,K3,K4,K5,K6,K7,K8 cost
+class PAID note

@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.generation.domain.item_kinds import ItemKind
+from app.modules.generation.domain.language import PlanLanguage
 from app.modules.generation.presentation.schemas import GenerationResponse
 from app.modules.teaching_plans.domain.entities import PlanLevel
 from app.shared.validation import OptionalText
@@ -57,6 +58,12 @@ class PlanCreate(BaseModel):
     )
     total_weight: float | None = Field(default=None, ge=0)
     academic_items_id: UUID | None = None
+    #: Which language the AI writes the plan in. Optional: omitted keeps the
+    #: old behaviour of inferring it from `input`.
+    language: PlanLanguage | None = Field(
+        default=None,
+        description="language the plan is written in; inferred from input when omitted",
+    )
     input: OptionalText = Field(
         default=None,
         max_length=MAX_AI_INPUT,

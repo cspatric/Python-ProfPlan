@@ -1,0 +1,74 @@
+flowchart LR
+
+IDENT["`🔑 IDENTITY`"]
+  S1["`ARGON2ID · access 15min / refresh 30d
+HttpOnly + Secure + SameSite cookies
+only the SHA-256 HASH of the refresh is stored
+every refresh ROTATES · replaying a revoked one
+= REUSE DETECTION → every session killed
+(a revoked token in use means it leaked)`"]
+IDENT -.- S1
+  S2["`NO Bearer header, NO token in localStorage
+→ XSS cannot steal the session
+→ which is exactly WHY CSRF middleware exists
+You do not get to skip one of the two.`"]
+  S3["`OAUTH GOOGLE — state in Redis, single-use
+stops login-CSRF (attacker completing the dance
+and landing you in THEIR account)
+routes registered only when configured:
+a disabled feature that still answers on its URL
+is one you will forget is disabled`"]
+  S1 --> S2 --> S3
+
+INPUT["`📥 UNTRUSTED INPUT`"]
+  S4["`UPLOADS — 3 layers before persisting anything
+extension allow-list + declared MIME + MAGIC BYTES
+a renamed .exe dies at the third
+bounded read → 413, never OOM
+stored and parsed, NEVER executed`"]
+INPUT -.- S4
+  S5["`PROMPT INJECTION — «untrusted_document_context»
+every system prompt treats it as DATA
+a PDF saying 'ignore previous instructions'
+does not get to steer the model`"]
+  S7["`100% ORM, bound parameters
+the only raw statement in the project
+is SELECT 1 in the readiness probe`"]
+  S4 --> S5 --> S7
+
+ISO["`🚧 ISOLATION`"]
+  S6["`TENANT ISOLATION — the one that would end the product
+vector search REFUSES to run unscoped
+every repository filters by user_id
+routers may not build queries at all`"]
+ISO -.- S6
+  S8["`API KEYS NEVER IN THE DB — environment only
+the DB holds which provider is ENABLED,
+not its secret`"]
+  S10["`NON-ROOT images · two Docker networks
+Postgres, Redis, Ollama, PgBouncer, Tempo:
+NOT published to the host
+Traefik's unauthenticated :8080 dashboard: OFF`"]
+  S6 --> S8 --> S10
+
+TRAIL["`📜 SUPPLY CHAIN & TRAIL`"]
+  S9["`Dependabot + pip-audit + gitleaks,
+the last two BLOCKING the build
+proof in the history:
+'fix/upgrade-pypdf-past-two-advisories'`"]
+TRAIL -.- S9
+  S11["`AUDIT — the row is staged INSIDE the caller's
+own transaction, right before commit
+→ no change without a trail,
+no trail without a change
+snapshots JSON-safe by construction
+(serialization must never break business)
+and never copy password_hash`"]
+  S9 --> S11
+
+IDENT === INPUT
+INPUT === ISO
+ISO === TRAIL
+
+classDef sec fill:#e8efff,stroke:#2563eb,stroke-width:2px,color:#0b1220
+class S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,S11 sec

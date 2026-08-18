@@ -1,43 +1,71 @@
-%% D2 — Clean architecture: the four layers, the dependency rule,
-%% and one request travelling through them.
-%% Show this while narrating "the shape of the code" and "one request end to end".
+flowchart LR
 
-flowchart TB
-
-subgraph REQ["One request: POST /api/v1/subjects"]
-  direction TB
-  R0["Traefik<br/>routes by host · terminates TLS<br/>attaches the real client IP"]
-  R1["SecurityHeaders — decorates every response, 429s included"]
-  R2["RequestLogging — 1 JSON line: user, latency, trace_id"]
-  R3["Rate limit (slowapi) — counters in Redis, so limits hold across replicas"]
-  R4["CSRF — innermost: it only needs this request's own cookies"]
+REQ["`One request: POST /api/v1/subjects`"]
+  R0["`Traefik
+routes by host · terminates TLS
+attaches the real client IP`"]
+REQ -.- R0
+  R1["`SecurityHeaders — decorates every response, 429s included`"]
+  R2["`RequestLogging — 1 JSON line: user, latency, trace_id`"]
+  R3["`Rate limit (slowapi) — counters in Redis, so limits hold across replicas`"]
+  R4["`CSRF — innermost: it only needs this request's own cookies`"]
   R0 --> R1 --> R2 --> R3 --> R4
-end
 
-subgraph LAY["The module — 13 of these, all with the same 4 layers"]
-  direction TB
+LAY["`The module — 13 of these, all with the same 4 layers`"]
 
-  L1["PRESENTATION · presentation/<br/>router + request/response schemas + deps<br/>HTTP and nothing else<br/>a malformed body dies here with 422"]
-  L2["APPLICATION · application/<br/>SubjectService — the use case<br/>owner taken from the authenticated user<br/>stages the audit row in the same transaction"]
-  L3["DOMAIN · domain/<br/>entities · enums · interfaces · exceptions<br/>plain Python — no FastAPI, no SQLAlchemy<br/>deletable frameworks, surviving folder"]
-  L4["INFRASTRUCTURE · infrastructure/<br/>SQLAlchemy models + repository<br/>owns the SQL · filters by user_id and deleted_at<br/>the ONLY place a query is built"]
+  L1["`PRESENTATION · presentation/
+router + request/response schemas + deps
+HTTP and nothing else
+a malformed body dies here with 422`"]
+LAY -.- L1
+  L2["`APPLICATION · application/
+SubjectService — the use case
+owner taken from the authenticated user
+stages the audit row in the same transaction`"]
+  L3["`DOMAIN · domain/
+entities · enums · interfaces · exceptions
+plain Python — no FastAPI, no SQLAlchemy
+deletable frameworks, surviving folder`"]
+  L4["`INFRASTRUCTURE · infrastructure/
+SQLAlchemy models + repository
+owns the SQL · filters by user_id and deleted_at
+the ONLY place a query is built`"]
 
   L1 -->|"calls"| L2
   L2 -->|"calls"| L4
   L2 -.->|"depends on the interface"| L3
   L4 -.->|"implements the interface"| L3
-end
 
-DB[("PostgreSQL<br/>subject + audit_logs<br/>commit together or not at all")]
+DB[("`PostgreSQL
+subject + audit_logs
+commit together or not at all`")]
 
 R4 ==> L1
 L4 ==> DB
 
-RULE["THE DEPENDENCY RULE<br/>outer knows inner · never the reverse<br/>the domain layer does not know<br/>what HTTP is or what a database is"]
+RULE["`THE DEPENDENCY RULE
+outer knows inner · never the reverse
+the domain layer does not know
+what HTTP is or what a database is`"]
 
-INV["THE ONE INVARIANT<br/>user_id NEVER comes from the request body<br/>it comes from the auth cookie<br/>and the repository filters by it<br/><br/>routers are forbidden from touching the DB<br/>so the ownership filter is structure,<br/>not something a developer must remember<br/><br/>one forgotten filter = teacher reads teacher"]
+INV["`THE ONE INVARIANT
+user_id NEVER comes from the request body
+it comes from the auth cookie
+and the repository filters by it
 
-TRADE["WHY MODULAR MONOLITH<br/>one deployable · borders held by structure<br/>bought: no distributed transactions,<br/>no network failure per pair, light ops<br/>paid: no independent deploy/scale per module<br/>borders drawn where I WOULD cut later —<br/>the option stays open, it is not closed"]
+routers are forbidden from touching the DB
+so the ownership filter is structure,
+not something a developer must remember
+
+one forgotten filter = teacher reads teacher`"]
+
+TRADE["`WHY MODULAR MONOLITH
+one deployable · borders held by structure
+bought: no distributed transactions,
+no network failure per pair, light ops
+paid: no independent deploy/scale per module
+borders drawn where I WOULD cut later —
+the option stays open, it is not closed`"]
 
 LAY --- RULE
 LAY --- INV

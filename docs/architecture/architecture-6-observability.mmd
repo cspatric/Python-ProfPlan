@@ -1,0 +1,95 @@
+flowchart LR
+
+IN["`◀ from 1, 2 and 4 · every process`"]
+
+STD["`stdout · single-line JSON`"]
+STD_N["`no files, no rotation
+a container should not know Loki exists`"]
+STD -.- STD_N
+PTL["`Promtail`"]
+PTL_N["`discovers containers via the Docker socket
+a new service is collected with zero config`"]
+PTL -.- PTL_N
+LOK["`Loki · logs`"]
+LOK_N["`query by any JSON field
+{container=...} | json | user_email=...`"]
+LOK -.- LOK_N
+
+MET["`/metrics`"]
+MET_N["`rate, latency, status per route
+plus the three the HTTP layer cannot see:
+dependency_up, celery_queue_depth,
+llm_requests_total by provider and outcome
+exported because an alert watches them`"]
+MET -.- MET_N
+NEX["`node-exporter`"]
+NEX_N["`host CPU, memory, disk, network
+is the app slow or is the box dying`"]
+NEX -.- NEX_N
+PRM["`Prometheus :9090`"]
+PRM_N["`scrapes /metrics, NOT /ready
+readiness is for the orchestrator,
+metrics is for monitoring
+12 alert rules + SLO recording rules
+CI validates the rule files: a broken one
+starts Prometheus with no alerts, silently`"]
+PRM -.- PRM_N
+
+OTL["`OpenTelemetry`"]
+OTL_N["`opt-in · auto-instruments FastAPI,
+SQLAlchemy, Redis, httpx and Celery
+context propagates through the Redis broker`"]
+OTL -.- OTL_N
+OTC["`OTel Collector`"]
+OTC_N["`code talks OTLP to this, never to Tempo
+changing backend is one container config`"]
+OTC -.- OTC_N
+TMP["`Tempo · traces`"]
+TMP_N["`no UI of its own, not published to the host
+Grafana is the only window`"]
+TMP -.- TMP_N
+
+GRF["`Grafana :3000`"]
+GRF_N["`three datasources, provisioned as code
+every panel backs an alert rule;
+a panel that pages nobody is decoration
+the payoff: a log line carries trace_id,
+so one signal hands you to the next
+93% of ingestion was the embedding call,
+a number no aggregate metric would give`"]
+GRF -.- GRF_N
+
+ALM["`Alertmanager :9093`"]
+ALM_N["`groups, inhibits symptoms of a known cause
+runbook annotation on every rule
+Watchdog always fires: its silence is the signal
+receiver not wired yet: alerts stop at the UI`"]
+ALM -.- ALM_N
+
+SLO["`SLOs`"]
+SLO_N["`alerts answer IS IT UP
+SLOs answer IS IT KEEPING ITS PROMISE
+99% without 5xx · 95% under 500ms
+95% of plans drafted under 2 min
+under 5% of draftings fail · 30-day window
+an objective is useful only if it can be missed`"]
+SLO -.- SLO_N
+
+IN ==> STD
+IN ==> MET
+IN ==> OTL
+STD --> PTL --> LOK --> GRF
+MET --> PRM
+NEX --> PRM
+PRM --> GRF
+OTL --> OTC --> TMP --> GRF
+PRM -->|"fired"| ALM
+PRM --- SLO
+
+classDef obs fill:#e6f7f7,stroke:#0d9488,stroke-width:2px,color:#0b1220
+classDef port fill:#ffffff,stroke:#0b1220,stroke-width:2px,stroke-dasharray:4 3,color:#0b1220
+classDef note fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+
+class STD,PTL,LOK,MET,NEX,PRM,OTL,OTC,TMP,GRF,ALM,SLO obs
+class IN port
+class STD_N,PTL_N,LOK_N,MET_N,NEX_N,PRM_N,OTL_N,OTC_N,TMP_N,GRF_N,ALM_N,SLO_N note

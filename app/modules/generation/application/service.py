@@ -32,10 +32,11 @@ from app.modules.generation.domain.item_kinds import (
     is_graded,
     normalize_kind,
 )
+from app.modules.generation.domain.language import PlanLanguage, parse_language
 from app.modules.generation.domain.plan_brief import PlanBrief, build_plan_brief
 from app.modules.generation.domain.prompts import (
-    GENERATOR_SYSTEM,
     build_item_prompt,
+    generator_system,
 )
 from app.modules.generation.domain.roadmap import Roadmap
 from app.modules.generation.domain.scheduling import schedule_items
@@ -265,6 +266,7 @@ class GenerationService:
         teacher_input: str | None = None,
         content_ids: list[UUID] | None = None,
         classes: int | None = None,
+        language: PlanLanguage | None = None,
     ) -> Roadmap:
         """Run the planner agent (the synchronous AI call) and validate it.
 
@@ -288,10 +290,16 @@ class GenerationService:
             content_ids=content_ids,
             classes=classes,
             disabled=disabled,
+            language=language,
         )
 
     async def start(
-        self, *, user_id: UUID, plan_id: UUID, teacher_input: str | None = None
+        self,
+        *,
+        user_id: UUID,
+        plan_id: UUID,
+        teacher_input: str | None = None,
+        language: PlanLanguage | None = None,
     ) -> tuple[PlanGeneration, list[AcademicItem]]:
         """Plan + materialise for an existing plan (manual retrigger)."""
         plan = await self._plans.get_by_id(plan_id, user_id)
@@ -313,6 +321,7 @@ class GenerationService:
                 teacher_input=teacher_input,
                 content_ids=content_ids,
                 classes=brief.classes,
+                language=language,
             )
         # The run does not exist until materialise creates it, so the ledger
         # waits for it. Nothing is lost in between: the scope has already
@@ -322,6 +331,7 @@ class GenerationService:
             plan=plan,
             roadmap=roadmap,
             teacher_input=teacher_input or self.default_input(),
+            language=language,
         )
         await self._repo.add_usage(run.uuid, ledger)
         await self._session.commit()
@@ -335,6 +345,7 @@ class GenerationService:
         teacher_input: str | None,
         item_counts: Mapping[ItemKind, int] | None = None,
         item_kinds: Sequence[ItemKind] | None = None,
+        language: PlanLanguage | None = None,
     ) -> PlanGeneration:
         """Open a run before the planner is called, and commit it.
 
@@ -356,6 +367,9 @@ class GenerationService:
                 "request": teacher_input,
                 "counts": {kind.value: n for kind, n in (item_counts or {}).items()},
                 "kinds": [kind.value for kind in (item_kinds or [])],
+                # Read back by the worker that drafts, and again by every item
+                # task: the choice has to outlive the request that made it.
+                "language": language,
             },
         )
         self._repo.add(run)
@@ -412,6 +426,7 @@ class GenerationService:
                 teacher_input=teacher_input,
                 content_ids=content_ids,
                 classes=brief.classes,
+                language=parse_language(asked.get("language")),
             )
         await self._repo.add_usage(run.uuid, ledger)
         _, items = await self.materialize(
@@ -431,6 +446,7 @@ class GenerationService:
         roadmap: Roadmap,
         teacher_input: str,
         run: PlanGeneration | None = None,
+        language: PlanLanguage | None = None,
     ) -> tuple[PlanGeneration, list[AcademicItem]]:
         """Persist a validated roadmap: run + modules + pending items.
 
@@ -442,7 +458,9 @@ class GenerationService:
             run = PlanGeneration(
                 plan_id=plan.uuid,
                 user_id=user_id,
-                input={"request": teacher_input},
+                # The language rides with the request because the item tasks run
+                # later, in another process, and this is all they get to read.
+                input={"request": teacher_input, "language": language},
             )
             self._repo.add(run)
         run.status = GenerationRunStatus.RUNNING
@@ -555,7 +573,12 @@ class GenerationService:
             # with a long answer. The roadmap itself, which decides what all of
             # them are about, stays on the standard tier.
             result = await self._gateway.generate(
-                prompt, system=GENERATOR_SYSTEM, disabled=disabled, tier=Tier.FAST
+                prompt,
+                system=generator_system(
+                    parse_language((run.input or {}).get("language")) if run else None
+                ),
+                disabled=disabled,
+                tier=Tier.FAST,
             )
 
         item.content = {"markdown": result.text, "provider": result.provider}
