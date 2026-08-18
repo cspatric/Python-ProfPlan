@@ -81,6 +81,12 @@ docker/alertmanager/slack_api_url
 docs/study/*.pdf
 backups/
 
+# Presentation scripts. They live outside this repository on purpose — they are
+# personal speaking notes, not project documentation, and they go stale the
+# moment the code moves. Ignored here so that copying one in never commits it.
+roteiro*.txt
+roteiro*.md
+
 # Terraform: local state, the plugin cache and any plan file. State holds the
 # database password and every generated secret, so it never belongs in git.
 infra/.terraform/
