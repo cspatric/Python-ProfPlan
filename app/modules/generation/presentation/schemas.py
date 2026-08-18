@@ -10,6 +10,7 @@ from app.modules.generation.domain.entities import (
     GenerationItemStatus,
     GenerationRunStatus,
 )
+from app.modules.generation.domain.language import PlanLanguage
 from app.modules.generation.infrastructure.models import PlanGeneration
 
 
@@ -18,6 +19,13 @@ class GenerateRequest(BaseModel):
 
     input: str = Field(
         min_length=1, description="what the teacher wants the plan to be"
+    )
+    #: Optional on purpose. Omitting it keeps the old behaviour — infer the
+    #: language from `input` — so a client that has not been updated does not
+    #: suddenly start producing plans in a language nobody asked for.
+    language: PlanLanguage | None = Field(
+        default=None,
+        description="language the plan is written in; inferred from input when omitted",
     )
 
 

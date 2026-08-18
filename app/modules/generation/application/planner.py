@@ -25,10 +25,11 @@ from app.core.config import get_settings
 from app.modules.ai.infrastructure.gateway.llm_gateway import LLMGateway
 from app.modules.generation.application.reviewer import RoadmapReviewer
 from app.modules.generation.domain.exceptions import PlannerError
+from app.modules.generation.domain.language import PlanLanguage
 from app.modules.generation.domain.prompts import (
-    PLANNER_SYSTEM,
     build_planner_prompt,
     build_repair_prompt,
+    planner_system,
 )
 from app.modules.generation.domain.roadmap import Roadmap
 from app.modules.generation.domain.roadmap_eval import check_roadmap
@@ -62,6 +63,7 @@ class PlannerAgent:
         classes: int | None = None,
         disabled: frozenset[str] | set[str] = frozenset(),
         retries: int = 1,
+        language: PlanLanguage | None = None,
     ) -> Roadmap:
         """Retrieve context, draft the roadmap, evaluate it, repair if rejected.
 
@@ -80,6 +82,7 @@ class PlannerAgent:
             plan_info=plan_info,
             disabled=disabled,
             retries=retries,
+            language=language,
         )
         return await self._evaluated(
             roadmap,
@@ -89,6 +92,7 @@ class PlannerAgent:
             plan_info=plan_info,
             classes=classes,
             disabled=disabled,
+            language=language,
         )
 
     async def _context(
@@ -133,6 +137,7 @@ class PlannerAgent:
         plan_info: str,
         disabled: frozenset[str] | set[str],
         retries: int,
+        language: PlanLanguage | None,
     ) -> Roadmap:
         """Ask the planner for a roadmap until it validates (or give up)."""
         last_error: Exception | None = None
@@ -149,7 +154,7 @@ class PlannerAgent:
                     "with every field present."
                 )
             result = await self._gateway.generate(
-                prompt, system=PLANNER_SYSTEM, disabled=disabled
+                prompt, system=planner_system(language), disabled=disabled
             )
             try:
                 return Roadmap.model_validate_json(extract_json(result.text))
@@ -175,6 +180,7 @@ class PlannerAgent:
         plan_info: str,
         classes: int | None,
         disabled: frozenset[str] | set[str],
+        language: PlanLanguage | None,
     ) -> Roadmap:
         """Run the evaluation tiers; return the repaired roadmap, or the original."""
         if not get_settings().planner_eval_enabled:
@@ -209,6 +215,7 @@ class PlannerAgent:
             context=context,
             plan_info=plan_info,
             disabled=disabled,
+            language=language,
         )
 
     async def _repair(
@@ -221,6 +228,7 @@ class PlannerAgent:
         context: str,
         plan_info: str,
         disabled: frozenset[str] | set[str],
+        language: PlanLanguage | None,
     ) -> Roadmap:
         """Re-plan once with the critique attached; keep the original on failure.
 
@@ -237,7 +245,7 @@ class PlannerAgent:
         )
         try:
             result = await self._gateway.generate(
-                prompt, system=PLANNER_SYSTEM, disabled=disabled
+                prompt, system=planner_system(language), disabled=disabled
             )
             repaired = Roadmap.model_validate_json(extract_json(result.text))
         except (ValidationError, ValueError) as exc:

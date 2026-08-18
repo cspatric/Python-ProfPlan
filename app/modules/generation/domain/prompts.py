@@ -13,6 +13,7 @@ them in isolation would break the parse.
 from functools import lru_cache
 from pathlib import Path
 
+from app.modules.generation.domain.language import PlanLanguage, language_rule
 from app.shared.ai.prompt_safety import CONTEXT_SAFETY_RULE, wrap_untrusted_context
 
 _PLANNER_PROMPT_FILE = Path(__file__).with_name("planner_prompt.md")
@@ -23,8 +24,13 @@ PLANNER_SYSTEM = (
     "roadmap of a teaching plan: which modules (units) it should have and which "
     "academic items (content, activities, assessments, bibliography, ...) each "
     "module needs. You do NOT write the content itself here — you only plan it. "
-    "Respond in the same language as the teacher's input. " + CONTEXT_SAFETY_RULE
+    + CONTEXT_SAFETY_RULE
 )
+
+
+def planner_system(language: PlanLanguage | None = None) -> str:
+    """The planner's system prompt, in the language the teacher chose."""
+    return f"{PLANNER_SYSTEM} {language_rule(language)}"
 
 
 @lru_cache
@@ -135,9 +141,18 @@ def build_repair_prompt(
 GENERATOR_SYSTEM = (
     "You are a teaching-content generator. You produce a single academic item "
     "(content, activity, assessment or bibliography) for a teaching plan, ready "
-    "to use, grounded in the provided context when relevant. Respond in the same "
-    "language as the request. Return well-structured Markdown. " + CONTEXT_SAFETY_RULE
+    "to use, grounded in the provided context when relevant. "
+    "Return well-structured Markdown. " + CONTEXT_SAFETY_RULE
 )
+
+
+def generator_system(language: PlanLanguage | None = None) -> str:
+    """The item generator's system prompt, in the plan's language.
+
+    Every item of a run gets the same value, read back from the run, so a plan
+    cannot come out half in one language and half in another.
+    """
+    return f"{GENERATOR_SYSTEM} {language_rule(language)}"
 
 
 def build_item_prompt(*, item_prompt: str, context: str, plan_info: str) -> str:

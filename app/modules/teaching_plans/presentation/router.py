@@ -27,6 +27,7 @@ router = APIRouter(prefix="/plans", tags=["plans"])
 #: exist on the table.
 _GENERATION_ONLY_FIELDS = {
     "input",
+    "language",
     "document_ids",
     "activity_count",
     "exam_count",
@@ -92,6 +93,7 @@ async def create_plan(
         teacher_input=teacher_input,
         item_counts=payload.requested_counts(),
         item_kinds=payload.item_kinds,
+        language=payload.language,
     )
     generate_plan.delay(str(plan.uuid), str(user.uuid), str(run.uuid), teacher_input)
 
