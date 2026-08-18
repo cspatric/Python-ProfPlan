@@ -77,6 +77,16 @@ class DocumentService:
             subject_id, user_id, limit=limit, offset=offset
         )
 
+    async def list_all(
+        self, *, user_id: UUID, limit: int, offset: int
+    ) -> list[Document]:
+        """Every document the user owns, whatever subject it sits in.
+
+        No subject to check ownership of here — the repository's join to
+        `subjects` is the scope, so there is nothing a caller can forget.
+        """
+        return await self._documents.list_for_user(user_id, limit=limit, offset=offset)
+
     async def soft_delete(self, *, user_id: UUID, document_id: UUID) -> None:
         """Soft-delete a document (sets deleted_at)."""
         document = await self.get(user_id=user_id, document_id=document_id)

@@ -39,6 +39,32 @@ class DocumentRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def list_for_user(
+        self, user_id: UUID, *, limit: int, offset: int
+    ) -> list[Document]:
+        """Every non-deleted document the user owns, across all subjects.
+
+        The library screen needs one list, not one request per subject: a
+        teacher with thirty subjects would otherwise open thirty connections to
+        draw one page. The ownership scope is the same join as everywhere else —
+        it is the subject that carries the owner, so the join is what makes this
+        safe, not the caller.
+        """
+        stmt = (
+            select(Document)
+            .join(Subject, Document.subject_id == Subject.uuid)
+            .where(
+                Subject.user_id == user_id,
+                Document.deleted_at.is_(None),
+                Subject.deleted_at.is_(None),
+            )
+            .order_by(Document.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def list_by_subject(
         self, subject_id: UUID, user_id: UUID, *, limit: int, offset: int
     ) -> list[Document]:
