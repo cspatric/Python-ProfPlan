@@ -20,17 +20,18 @@ dead letter queue, see
 `emails.send` is deliberately not replayable there because the body holds a
 reset token that is never stored.
 
-## Development: Mailpit
+## Development: the log
 
-The dev stack ships Mailpit. It accepts everything on port 1025 and delivers
-nothing; the messages are readable at <http://localhost:8025>.
+There is no local capture server in the stack. Turn delivery off instead:
 
 ```
-EMAIL_ENABLED=true
-SMTP_HOST=mailpit
-SMTP_PORT=1025
-SMTP_USE_TLS=false
+EMAIL_ENABLED=false
 ```
+
+The sender becomes `ConsoleEmailSender` and the whole message, link included, is
+written to the log — which is all a developer needs, since the link is the point.
+Read it with `docker compose logs -f worker`, because delivery always happens in
+a Celery task and never in the request.
 
 That is the default, and it is the right default: developing against a real
 provider means burning quota and, eventually, sending a test message to a real
