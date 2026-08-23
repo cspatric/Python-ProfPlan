@@ -36,7 +36,12 @@ for a local one. Counting an unknown model as zero would make a cost report
 that quietly balances while missing part of the invoice, so the unknown case
 gets its own counter and its own alert. This is not hypothetical: the first
 real run after this was written used `gemini-flash-lite-latest`, an alias that
-was not in the table, and the counter is how anybody knew.
+was not in the table, and the counter is how anybody knew. (Gemini is gone from
+the chain now, but the trap is not: `openai.gpt-oss-*` on Bedrock is
+**deliberately** unpriced, because guessing a rate card is worse than reporting
+a hole. Expect the unknown-model counter to move whenever the chain falls
+through to it, and price it from the published rate card before anybody trusts
+a total that includes it.)
 
 **The accumulation happens in the database.** A dozen item workers finish at the
 same time; a read-modify-write in Python would drop most of them. `UPDATE ...

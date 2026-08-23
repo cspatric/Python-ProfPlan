@@ -27,10 +27,13 @@ the deployment, and in this one it can be:
 
 | processor | what it receives | where |
 | --- | --- | --- |
-| Amazon Bedrock (Anthropic, Amazon models) | the prompt: passages of your documents and your plan's parameters | us-east-1 |
-| Google (Gemini API) | the same, when the chain falls through to it | Google's infrastructure |
-| OpenAI | the same, when the chain falls through to it | OpenAI's infrastructure |
+| Amazon Bedrock | the prompt: passages of your documents and your plan's parameters | us-east-1 |
 | Resend | your email address and the message, for password resets | Resend's infrastructure |
+
+Every remote model runs inside Bedrock — Anthropic's, Amazon's and OpenAI's
+open-weight ones — so the fallback chain changing which model answers does not
+change **who** receives your material or in which region. Nothing is sent to
+those vendors directly.
 
 Nothing else leaves. The prompt is never written to the logs: the per-call
 record keeps the provider, the model, the token counts, the cost and the

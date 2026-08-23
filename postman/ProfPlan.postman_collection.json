@@ -79,6 +79,16 @@
       "key": "color_id",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "notification_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "figure_id",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -930,6 +940,107 @@
                 "{{academic_item_id}}"
               ]
             }
+          },
+          "response": []
+        },
+        {
+          "name": "List Item Sources",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-items/{{academic_item_id}}/sources",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-items",
+                "{{academic_item_id}}",
+                "sources"
+              ]
+            },
+            "description": "Which document chunks the AI used to write this item, so an activity can be traced back to the teacher's own material."
+          },
+          "response": []
+        },
+        {
+          "name": "List Item Figures",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-items/{{academic_item_id}}/figures",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-items",
+                "{{academic_item_id}}",
+                "figures"
+              ]
+            },
+            "description": "The figures resolved for this item: the Commons file, the licence and the attribution line to print next to it."
+          },
+          "response": []
+        },
+        {
+          "name": "Download Item Figure",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-items/{{academic_item_id}}/figures/{{figure_id}}",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-items",
+                "{{academic_item_id}}",
+                "figures",
+                "{{figure_id}}"
+              ]
+            },
+            "description": "The image bytes. Immutable Cache-Control plus an ETag, since the file behind an id never changes. The id is looked up in this item's own figure rows first, so the path is an allowlist rather than a filename the caller chooses."
+          },
+          "response": []
+        },
+        {
+          "name": "Download Item Handout (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/academic-items/{{academic_item_id}}/handout.pdf",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "academic-items",
+                "{{academic_item_id}}",
+                "handout.pdf"
+              ]
+            },
+            "description": "The item rendered as a printable handout, figures included."
           },
           "response": []
         }
@@ -1882,6 +1993,99 @@
         }
       ],
       "description": "Audit trail of business actions (create/update/delete). Admin only."
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/notifications?limit=20&offset=0",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                },
+                {
+                  "key": "unread_only",
+                  "value": "true",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Newest first, with the unread count in the same response so the bell and its badge cost one round trip."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark One Read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/notifications/{{notification_id}}/read",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "notifications",
+                "{{notification_id}}",
+                "read"
+              ]
+            },
+            "description": "204. Idempotent: one already read stays read."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark All Read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{hostHeader}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/notifications/read-all",
+              "host": [
+                "{{baseUrl}}{{apiPrefix}}"
+              ],
+              "path": [
+                "notifications",
+                "read-all"
+              ]
+            },
+            "description": "Marks every unread notification of the caller and answers how many it touched."
+          },
+          "response": []
+        }
+      ],
+      "description": "Emitted when long-running work ends: a plan finished generating (plan_ready / plan_partial / plan_failed) or a document finished indexing (document_indexed / document_failed)."
     },
     {
       "name": "Generation",
