@@ -30,10 +30,20 @@ def _record_on_span(exc: Exception, message: str) -> None:
 
 
 async def _app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-    """Map an expected AppError to its HTTP status and detail."""
+    """Map an expected AppError to its HTTP status, code and detail.
+
+    Both fields, not one. ``code`` is what a client keys off — it is stable and
+    it is what lets the interface show this failure in the reader's own
+    language. ``detail`` stays because a code with no sentence behind it is
+    unreadable in a log, in a test failure, and to any client that has not been
+    taught this code yet.
+    """
     if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
         _record_on_span(exc, exc.detail)
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": exc.code, "detail": exc.detail},
+    )
 
 
 async def _pool_timeout_handler(
