@@ -1,0 +1,63 @@
+flowchart LR
+
+TF["`TERRAFORM — infrastructure as code
+38 AWS resources
+same architecture: local services
+swapped for managed ones`"]
+
+VPC["`VPC
+public and private subnets`"]
+
+EC2["`EC2 — the application
+a single instance today
+IAM + Session Manager
+instead of open SSH`"]
+
+RDS["`RDS PostgreSQL + pgvector
+accepts connections ONLY
+from the application
+no Multi-AZ yet`"]
+
+S3["`S3 — the files
+private and versioned`"]
+
+SSM["`SSM PARAMETER STORE
+the secrets`"]
+
+OBS["`OBSERVABILITY, SPLIT
+Prometheus watches the application
+CloudWatch watches the infrastructure`"]
+
+BAK["`BACKUP AND RESTORE
+scripts for the database and the files —
+the rest of the app can be rebuilt
+prepared, but SCHEDULING not
+configured yet`"]
+
+HON["`STATED EXPLICITLY
+the architecture supports scale and
+high availability — this infrastructure
+still needs to be provisioned
+to actually reach those levels`"]
+
+TF --> VPC
+VPC --> EC2
+EC2 --> RDS
+EC2 --> S3
+EC2 --> SSM
+EC2 -.- OBS
+RDS -.- BAK
+S3 -.- BAK
+BAK -.- HON
+
+classDef iac fill:#e8efff,stroke:#2563eb,stroke-width:3px,color:#0b1220
+classDef net fill:#e7f6ef,stroke:#0f766e,stroke-width:3px,color:#0b1220
+classDef data fill:#fff0e6,stroke:#ea580c,stroke-width:3px,color:#0b1220
+classDef warn fill:#fde8e8,stroke:#dc2626,stroke-width:3px,color:#0b1220
+classDef obs fill:#e6f7f7,stroke:#0d9488,stroke-width:3px,color:#0b1220
+
+class TF iac
+class VPC,EC2 net
+class RDS,S3,SSM data
+class OBS obs
+class BAK,HON warn

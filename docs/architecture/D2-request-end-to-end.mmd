@@ -1,0 +1,83 @@
+flowchart LR
+
+REQ["`POST — create a subject
+Traefik receives, routes by hostname,
+attaches the real client IP,
+forwards to FastAPI`"]
+
+M1["`security headers`"]
+M2["`request logs
+records even the
+requests that were blocked`"]
+M3["`rate limiter`"]
+M4["`CSRF`"]
+
+MWNOTE["`Starlette runs the LAST registered
+middleware FIRST — so security headers
+decorate every response, including
+the 429 returned by the rate limiter`"]
+
+VAL["`ROUTER + VALIDATION
+body checked against the declared shape
+malformed body → 422, before any
+application code runs`"]
+
+DI["`DEPENDENCY INJECTION
+builds the service and hands it a
+request-scoped database session,
+the repository and the audit writer`"]
+
+REPO["`REPOSITORY — commands data access
+filters by owner and by non-deleted
+rows (soft delete)
+database access uses the ORM
+with parameters`"]
+
+TX["`ONE TRANSACTION
+service creates the row tied to the
+authenticated user AND writes the audit
+line · PostgreSQL commits both together —
+no 'log says success, operation failed'
+every business action writes a line`"]
+
+OUT["`RESPONSE
+model serialized to the response shape
+middleware adds the headers
+one structured log line: acting user
++ trace identifier`"]
+
+AUTH["`LOGIN — three cookies
+access token 15 min · refresh token 30 days
+both HttpOnly, Secure, SameSite
+CSRF is the only non-HttpOnly one
+tokens hashed SHA-256 in the database
+refresh ROTATED · reuse of a revoked token
+ends ALL sessions (reuse detection)
+Argon2id for passwords · login-attempt
+lockout · account export and deletion`"]
+
+OAUTH["`OAUTH + OIDC — many doors, one house
+Google · Microsoft · Apple on one account
+callback routes registered ONLY when the
+provider is configured · scopes: openid,
+email, profile — OIDC hands IDENTITY,
+not just authorization · one-time state
+both paths end in the SAME authorization`"]
+
+REQ --> M1 --> M2 --> M3 --> M4
+M4 -.- MWNOTE
+M4 --> VAL --> DI --> REPO --> TX --> OUT
+AUTH -.-|"guards every request"| REQ
+AUTH -.- OAUTH
+
+classDef edge fill:#fef9c3,stroke:#ca8a04,stroke-width:3px,color:#0b1220
+classDef mw fill:#e8efff,stroke:#2563eb,stroke-width:3px,color:#0b1220
+classDef core fill:#e7f6ef,stroke:#0f766e,stroke-width:3px,color:#0b1220
+classDef sec fill:#fde8e8,stroke:#dc2626,stroke-width:3px,color:#0b1220
+classDef note fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+
+class REQ edge
+class M1,M2,M3,M4 mw
+class VAL,DI,REPO,TX,OUT core
+class AUTH,OAUTH sec
+class MWNOTE note

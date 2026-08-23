@@ -1,0 +1,77 @@
+flowchart TB
+
+CHOICE["`MONOLITH OR MICROSERVICES?
+microservices sell scale and independent
+deploys, but charge for it with distribution,
+complexity and operational load —
+heavy for a small team and a product
+still being validated`"]
+
+MONO["`MODULAR MONOLITH — the middle ground
+one repository · one deploy
+code fully split into modules
+boundaries held by the CODE, not the network
+15,160 lines of Python`"]
+
+CUT["`A DELIBERATE LOOSE END
+module boundaries drawn exactly where
+a future cut into services would happen —
+that option stays open`"]
+
+DDD["`13 MODULES — DDD-inspired
+folder structure and layers, yes
+Value Objects and ubiquitous language, no —
+exactly the concepts that made sense here`"]
+
+P["`presentation/
+HTTP and nothing else
+routes · request and response shapes`"]
+
+A["`application/
+services · use cases
+business rules`"]
+
+D["`domain/
+pure Python
+entities · enums · interfaces · exceptions
+no framework, no database —
+would survive FastAPI and SQLAlchemy
+disappearing from the project`"]
+
+I["`infrastructure/
+SQLAlchemy · queries
+adapters to the outside world`"]
+
+RULE["`DEPENDENCY RULE — a cascade
+only outer layers may know inner ones,
+never the reverse: the domain has no idea
+what HTTP or a database is`"]
+
+OWN["`OWNERSHIP INVARIANT — strict multitenancy
+every domain query is scoped to the
+authenticated owner · the user id NEVER
+comes from the request body, always from
+Bearer Authorization · vector search refuses
+to run without a valid scope`"]
+
+CHOICE --> MONO
+MONO -.- CUT
+MONO --> DDD
+DDD --> P
+P -->|"may know"| A
+A -->|"may know"| D
+I -->|"adapts for"| D
+P -.- RULE
+OWN -.->|"enforced across all 13 modules"| DDD
+
+classDef decision fill:#fef9c3,stroke:#ca8a04,stroke-width:3px,color:#0b1220
+classDef mod fill:#e8efff,stroke:#2563eb,stroke-width:3px,color:#0b1220
+classDef layer fill:#e7f6ef,stroke:#0f766e,stroke-width:3px,color:#0b1220
+classDef rule fill:#fde8e8,stroke:#dc2626,stroke-width:3px,color:#0b1220
+classDef note fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+
+class CHOICE decision
+class MONO,DDD mod
+class P,A,D,I layer
+class OWN rule
+class CUT,RULE note

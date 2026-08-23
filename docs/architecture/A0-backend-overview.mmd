@@ -1,0 +1,104 @@
+flowchart LR
+
+CLIENT["`CLIENT
+React app · Postman`"]
+
+TRAEFIK["`TRAEFIK — the single entry point
+everything comes in through it
+terminates TLS · routes by hostname
+attaches the REAL client IP so the
+logger and rate limiter see the true
+address, not the proxy's`"]
+
+MW["`MIDDLEWARE CHAIN
+access management and
+cross-cutting concerns`"]
+
+MODS["`13 MODULES
+all with the same architecture
+and the same internal shape`"]
+
+WORKER["`CELERY — async side
+runs from the SAME image as the API
+RAG document ingestion
+study-plan generation`"]
+
+GATEWAY["`AI GATEWAY
+the single door for every LLM call
+fallback chain · model split by task
+different costs per tier`"]
+
+BEDROCK["`AMAZON BEDROCK
+Claude · Nova · OpenAI
+three model families,
+one integration`"]
+
+PGB["`PgBouncer
+connection pooler
+in front of the database`"]
+
+PG["`PostgreSQL
+vector-enabled database
+SQLAlchemy + Alembic`"]
+
+REDIS["`REDIS — four jobs,
+four separate logical spaces
+cache · Celery broker
+counters · rate limiter`"]
+
+MINIO["`MinIO
+file storage, S3's twin
+files never touch the database`"]
+
+OLLAMA["`OLLAMA — local
+bge-m3 for embeddings
+llama3.2 as the last LLM fallback`"]
+
+NET["`INTERNAL DOCKER NETWORK
+the data layer lives isolated from
+the outside world — never exposed
+to the host · frontal network only
+between Traefik and the API`"]
+
+OBS["`OBSERVABILITY STACK
+metrics · logs · traces
+system-wide health AND the
+behaviour of a single request`"]
+
+CLIENT -->|"HTTPS"| TRAEFIK
+TRAEFIK -->|"forwards inside"| MW
+MW --> MODS
+MODS -->|"owner-scoped SQL"| PGB
+PGB --> PG
+MODS --> REDIS
+MODS -->|"files"| MINIO
+REDIS -->|"delivers queued work"| WORKER
+WORKER --> PG
+WORKER --> MINIO
+MODS -->|"every AI call"| GATEWAY
+WORKER -->|"every AI call"| GATEWAY
+GATEWAY --> BEDROCK
+GATEWAY -->|"local floor"| OLLAMA
+PG -.- NET
+REDIS -.- NET
+MINIO -.- NET
+OLLAMA -.- NET
+MW -.->|"signals"| OBS
+WORKER -.->|"signals"| OBS
+GATEWAY -.->|"signals"| OBS
+
+classDef edge fill:#fef9c3,stroke:#ca8a04,stroke-width:3px,color:#0b1220
+classDef api fill:#e8efff,stroke:#2563eb,stroke-width:3px,color:#0b1220
+classDef asyn fill:#f2ecff,stroke:#7c3aed,stroke-width:3px,color:#0b1220
+classDef llm fill:#fff0e6,stroke:#ea580c,stroke-width:3px,color:#0b1220
+classDef data fill:#e7f6ef,stroke:#0f766e,stroke-width:3px,color:#0b1220
+classDef obs fill:#e6f7f7,stroke:#0d9488,stroke-width:3px,color:#0b1220
+classDef note fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+
+class CLIENT,TRAEFIK edge
+class MW,MODS api
+class WORKER asyn
+class GATEWAY,BEDROCK,OLLAMA llm
+class PGB,PG,REDIS,MINIO data
+class OBS obs
+class NET note
