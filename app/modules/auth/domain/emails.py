@@ -22,9 +22,12 @@ import html
 from dataclasses import dataclass
 
 #: The app's brand tokens (src/index.css) converted from oklch to hex.
-BRAND = "#055cb2"
-BRAND_DARK = "#004893"
-CANVAS = "#eef2f7"
+#: Brand is the violet at hue 296: brand-500 and brand-600, plus the canvas
+#: tint. INK, MUTED and HAIRLINE are pure neutrals in the frontend too, so a
+#: recolour of the brand does not move them.
+BRAND = "#7c12ea"
+BRAND_DARK = "#6502c3"
+CANVAS = "#f2f1f7"
 INK = "#1f2937"
 MUTED = "#6b7280"
 HAIRLINE = "#e5e7eb"
