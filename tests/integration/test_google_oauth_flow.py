@@ -137,7 +137,7 @@ async def test_a_passwordless_account_cannot_be_signed_into_with_a_password(clie
 
     response = await client.post(
         "/api/v1/auth/login",
-        json={"email": "teacher@example.com", "password": "Senha@123"},
+        json={"email": "teacher@example.com", "password": "Str0ng@Pass1"},
     )
 
     assert response.status_code == 401

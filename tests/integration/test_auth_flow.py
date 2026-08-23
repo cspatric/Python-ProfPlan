@@ -19,7 +19,7 @@ ME = "/api/v1/auth/me"
 async def test_register_creates_account_and_signs_in(client):
     resp = await client.post(
         REGISTER,
-        json={"name": "New User", "email": "new@test.com", "password": "Senha@123"},
+        json={"name": "New User", "email": "new@test.com", "password": "Str0ng@Pass1"},
     )
 
     assert resp.status_code == 201
@@ -35,7 +35,7 @@ async def test_register_creates_account_and_signs_in(client):
 
 
 async def test_register_duplicate_email_conflicts(client):
-    payload = {"name": "Dup", "email": "dup@test.com", "password": "Senha@123"}
+    payload = {"name": "Dup", "email": "dup@test.com", "password": "Str0ng@Pass1"}
     first = await client.post(REGISTER, json=payload)
     assert first.status_code == 201
 
@@ -46,12 +46,12 @@ async def test_register_duplicate_email_conflicts(client):
 async def test_register_then_login_works(client):
     await client.post(
         REGISTER,
-        json={"name": "Flow", "email": "flow@test.com", "password": "Senha@123"},
+        json={"name": "Flow", "email": "flow@test.com", "password": "Str0ng@Pass1"},
     )
     client.cookies.clear()
 
     resp = await client.post(
-        LOGIN, json={"email": "flow@test.com", "password": "Senha@123"}
+        LOGIN, json={"email": "flow@test.com", "password": "Str0ng@Pass1"}
     )
     assert resp.status_code == 200
 
@@ -60,7 +60,7 @@ async def test_login_sets_cookies_and_me_returns_user(client, user_factory):
     await user_factory(email="a@test.com")
 
     resp = await client.post(
-        LOGIN, json={"email": "a@test.com", "password": "Senha@123"}
+        LOGIN, json={"email": "a@test.com", "password": "Str0ng@Pass1"}
     )
 
     assert resp.status_code == 200
@@ -86,7 +86,7 @@ async def test_login_with_wrong_password_is_unauthorized(client, user_factory):
 
 async def test_refresh_rotates_and_old_token_is_rejected(client, user_factory):
     await user_factory(email="c@test.com")
-    await client.post(LOGIN, json={"email": "c@test.com", "password": "Senha@123"})
+    await client.post(LOGIN, json={"email": "c@test.com", "password": "Str0ng@Pass1"})
     old_refresh = client.cookies.get("refresh_token")
 
     rotated = await client.post(REFRESH)
@@ -123,7 +123,7 @@ async def test_login_is_rate_limited_after_max_attempts(client, user_factory):
 
 async def test_logout_revokes_session(client, user_factory):
     await user_factory(email="e@test.com")
-    await client.post(LOGIN, json={"email": "e@test.com", "password": "Senha@123"})
+    await client.post(LOGIN, json={"email": "e@test.com", "password": "Str0ng@Pass1"})
 
     out = await client.post(LOGOUT)
     assert out.status_code == 200
@@ -135,7 +135,7 @@ async def test_logout_revokes_session(client, user_factory):
 
 async def test_login_writes_audit_log(client, user_factory):
     await user_factory(email="f@test.com")
-    await client.post(LOGIN, json={"email": "f@test.com", "password": "Senha@123"})
+    await client.post(LOGIN, json={"email": "f@test.com", "password": "Str0ng@Pass1"})
 
     async with SessionFactory() as session:
         count = await session.scalar(
@@ -175,7 +175,7 @@ async def test_csrf_cookie_outlives_the_access_cookie(client, user_factory):
     await user_factory(email="ttl@test.com")
 
     resp = await client.post(
-        LOGIN, json={"email": "ttl@test.com", "password": "Senha@123"}
+        LOGIN, json={"email": "ttl@test.com", "password": "Str0ng@Pass1"}
     )
 
     max_ages = {
@@ -193,7 +193,7 @@ async def test_csrf_cookie_outlives_the_access_cookie(client, user_factory):
 
 async def test_mutating_request_without_csrf_header_is_forbidden(client, user_factory):
     await user_factory(email="h@test.com")
-    await client.post(LOGIN, json={"email": "h@test.com", "password": "Senha@123"})
+    await client.post(LOGIN, json={"email": "h@test.com", "password": "Str0ng@Pass1"})
 
     resp = await client.post(
         "/api/v1/subjects",

@@ -92,7 +92,7 @@ async def test_changing_a_password_requires_the_current_one(auth_client):
     assert (
         await auth_client.post(
             "/api/v1/auth/login",
-            json={"email": "domain@test.com", "password": "Senha@123"},
+            json={"email": "domain@test.com", "password": "Str0ng@Pass1"},
         )
     ).status_code == 200
 
@@ -100,7 +100,7 @@ async def test_changing_a_password_requires_the_current_one(auth_client):
 async def test_changing_a_password_ends_every_session(auth_client):
     response = await auth_client.post(
         "/api/v1/auth/password",
-        json={"password": "Another@1234", "current_password": "Senha@123"},
+        json={"password": "Another@1234", "current_password": "Str0ng@Pass1"},
     )
 
     assert response.status_code == 200
@@ -113,7 +113,7 @@ async def test_changing_a_password_ends_every_session(auth_client):
 async def test_a_short_password_is_refused(auth_client):
     response = await auth_client.post(
         "/api/v1/auth/password",
-        json={"password": "short", "current_password": "Senha@123"},
+        json={"password": "short", "current_password": "Str0ng@Pass1"},
     )
 
     assert response.status_code == 422

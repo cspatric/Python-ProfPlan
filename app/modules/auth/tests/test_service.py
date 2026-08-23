@@ -17,7 +17,7 @@ from app.modules.auth.infrastructure.models import AuthEvent, RefreshToken
 from app.modules.users.domain.entities import UserStatus
 from app.modules.users.infrastructure.models import User
 
-PASSWORD = "Senha@123"
+PASSWORD = "Str0ng@Pass1"
 
 
 # --------------------------------------------------------------------------- #
@@ -330,13 +330,13 @@ class TestPasswordRehash:
     """
 
     def test_a_current_hash_needs_nothing(self) -> None:
-        assert not password_needs_rehash(hash_password("Senha@12345"))
+        assert not password_needs_rehash(hash_password("Str0ng@Pass12"))
 
     def test_a_weaker_hash_is_flagged(self) -> None:
         from argon2 import PasswordHasher
 
         weak = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1).hash(
-            "Senha@12345"
+            "Str0ng@Pass12"
         )
 
         assert password_needs_rehash(weak)
