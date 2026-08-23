@@ -1,21 +1,30 @@
 """Academic item HTTP endpoints."""
 
+from collections.abc import Callable, Sequence
+from functools import partial
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Response, status
 from starlette.concurrency import run_in_threadpool
 
+from app.core.config import get_settings
+from app.infrastructure.storage.minio import get_object_storage
 from app.modules.academic_items.application.handout_service import (
     handout_filename,
     render_handout_pdf,
 )
-from app.modules.academic_items.infrastructure.models import AcademicItem
+from app.modules.academic_items.domain.exceptions import AcademicItemNotFoundError
+from app.modules.academic_items.infrastructure.models import (
+    AcademicItem,
+    AcademicItemFigure,
+)
 from app.modules.academic_items.presentation.dependencies import (
     AcademicItemServiceDep,
 )
 from app.modules.academic_items.presentation.schemas import (
     AcademicItemCreate,
+    AcademicItemFigureResponse,
     AcademicItemResponse,
     AcademicItemSourceResponse,
     AcademicItemUpdate,
@@ -145,6 +154,86 @@ async def get_academic_item_sources(
     ]
 
 
+def _figure_loader(
+    figures: Sequence[AcademicItemFigure],
+) -> Callable[[str], tuple[bytes, str, str | None]]:
+    """Reads a figure's bytes out of object storage, by path.
+
+    An allow-list, not a lookup: the paths come out of Markdown that a model
+    wrote, so only the paths recorded as this item's own figures can be read.
+    Anything else raises, and the renderer drops that figure. Without this, a
+    path in generated content would be a way to read the bucket.
+    """
+    allowed = {figure.figure_path: figure for figure in figures}
+    storage = get_object_storage()
+
+    def _load(path: str) -> tuple[bytes, str, str | None]:
+        figure = allowed.get(path)
+        if figure is None:
+            raise KeyError(path)
+        return storage.get_object(path), figure.mime_type, figure.caption
+
+    return _load
+
+
+def _figure_url(item_id: UUID, figure: AcademicItemFigure) -> str:
+    """Where a client GETs this figure's bytes."""
+    return f"{get_settings().api_prefix}/academic-items/{item_id}/figures/{figure.uuid}"
+
+
+@router.get("/{item_id}/figures", response_model=list[AcademicItemFigureResponse])
+async def list_figures(
+    item_id: UUID, user: CurrentUser, service: AcademicItemServiceDep
+) -> list[AcademicItemFigureResponse]:
+    """The illustrations of this item, in the order they appear in the content.
+
+    An empty list is a real answer: most items have no figure, and one that does
+    got it because the generator asked for it.
+    """
+    return [
+        AcademicItemFigureResponse.of(figure, url=_figure_url(item_id, figure))
+        for figure in await service.figures(user_id=user.uuid, item_id=item_id)
+    ]
+
+
+@router.get(
+    "/{item_id}/figures/{figure_id}",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}, "image/jpeg": {}}}},
+)
+async def download_figure(
+    item_id: UUID,
+    figure_id: UUID,
+    user: CurrentUser,
+    service: AcademicItemServiceDep,
+) -> Response:
+    """The bytes of one figure.
+
+    Streamed through the API rather than served from object storage directly:
+    MinIO has no published port and Traefik cannot reach it, so there is no URL
+    for a browser to open. Going through here also means the ownership check is
+    the same one every other read uses, instead of a signature with its own
+    expiry rules.
+    """
+    figures = await service.figures(user_id=user.uuid, item_id=item_id)
+    figure = next((f for f in figures if f.uuid == figure_id), None)
+    if figure is None:
+        raise AcademicItemNotFoundError
+    data = await run_in_threadpool(get_object_storage().get_object, figure.figure_path)
+    return Response(
+        content=data,
+        media_type=figure.mime_type,
+        headers={
+            # The object behind a figure id never changes: regenerating an item
+            # writes new rows and new objects. So this is cacheable for as long
+            # as the browser likes, and `private` keeps it out of shared caches
+            # because the URL is only readable by its owner.
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "ETag": f'"{figure.uuid}"',
+        },
+    )
+
+
 @router.get(
     "/{item_id}/handout.pdf",
     response_class=Response,
@@ -159,7 +248,18 @@ async def download_handout(
     regenerated, and a cached file would quietly hand out the previous version.
     """
     context = await service.handout(user_id=user.uuid, item_id=item_id)
-    pdf = await run_in_threadpool(render_handout_pdf, context)
+    # The figures are read out of object storage, in the same threadpool as the
+    # render: WeasyPrint is sync, MinIO's client is sync, and neither belongs on
+    # the event loop.
+    pdf = await run_in_threadpool(
+        partial(
+            render_handout_pdf,
+            context,
+            load_figure=_figure_loader(
+                await service.figures(user_id=user.uuid, item_id=item_id)
+            ),
+        )
+    )
     return Response(
         content=pdf,
         media_type="application/pdf",

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.modules.academic_items.infrastructure.models import AcademicItemFigure
 from app.modules.generation.domain.entities import GenerationItemStatus
 
 
@@ -83,3 +84,58 @@ class AcademicItemResponse(BaseModel):
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
+
+
+class AcademicItemFigureResponse(BaseModel):
+    """One illustration of an item, and the credit that must be shown with it.
+
+    ``path`` is the value that appears inside the item's Markdown, so a renderer
+    matches an ``![](...)`` to this row by it. ``url`` is where to GET the bytes.
+
+    The bytes are streamed by this API rather than handed out as a storage link,
+    and that is not laziness: MinIO lives on the internal Docker network with no
+    published port, and Traefik is on the edge network and cannot route to it. A
+    presigned URL would be a URL the browser cannot open. The network decision
+    from the architecture is what shapes this endpoint.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    uuid: UUID
+    position: int
+    path: str
+    url: str
+    alt_text: str
+    #: What to print under the image. Already carries the credit line.
+    caption: str | None
+    source: str
+    #: The page where the credit can be verified.
+    source_url: str | None
+    licence: str
+    licence_url: str | None
+    attribution: str | None
+    width: int | None
+    height: int | None
+    mime_type: str
+
+    @classmethod
+    def of(
+        cls, figure: AcademicItemFigure, *, url: str
+    ) -> "AcademicItemFigureResponse":
+        """Build from a row, adding the two fields a renderer needs."""
+        return cls(
+            uuid=figure.uuid,
+            position=figure.position,
+            path=figure.figure_path,
+            url=url,
+            alt_text=figure.alt_text,
+            caption=figure.caption,
+            source=figure.source.value,
+            source_url=figure.source_url,
+            licence=figure.licence,
+            licence_url=figure.licence_url,
+            attribution=figure.attribution,
+            width=figure.width,
+            height=figure.height,
+            mime_type=figure.mime_type,
+        )

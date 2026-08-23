@@ -130,7 +130,71 @@ def test_render_produces_a_pdf() -> None:
 
 def test_filename_is_derived_from_the_title() -> None:
     assert (
-        handout_filename("Atividade: Otimização (50 min)")
-        == "atividade-otimiza-o-50-min.pdf"
+        handout_filename("Activity: Optimización (50 min)")
+        == "activity-optimizaci-n-50-min.pdf"
     )
     assert handout_filename("///") == "activity.pdf"
+
+
+# --------------------------------------------------------------------------- #
+# Figures. The resolver writes only the image into the Markdown; the credit line
+# comes off the figure's row, through the loader, so the printed handout and the
+# web view cannot disagree about who is owed it.
+# --------------------------------------------------------------------------- #
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+
+
+def _with_figure(body: str) -> HandoutContext:
+    return HandoutContext(title="Neurons", body=body, is_graded=False)
+
+
+def test_a_figure_is_embedded_rather_than_linked() -> None:
+    """Inlined so the PDF is self-contained and reproducible: a handout
+    reprinted next semester must show the same diagram, not whatever that URL
+    serves by then."""
+    html = render_handout_html(
+        _with_figure("![A neuron](figures/abc/1.png)"),
+        load_figure=lambda path: (PNG_BYTES, "image/png", "Neuron.png — Jane, CC BY"),
+    )
+
+    assert "<figure>" in html
+    assert "data:image/png;base64," in html
+    assert "figures/abc/1.png" not in html  # the path never reaches the PDF
+    assert "<figcaption>Neuron.png — Jane, CC BY</figcaption>" in html
+
+
+def test_a_figure_that_cannot_be_loaded_takes_its_caption_with_it() -> None:
+    """A credit line under a missing picture is worse than no picture."""
+
+    def _missing(path: str):
+        raise KeyError(path)
+
+    html = render_handout_html(
+        _with_figure("![A neuron](figures/abc/1.png)"), load_figure=_missing
+    )
+
+    assert "<figure>" not in html
+    assert "Jane" not in html
+
+
+def test_a_remote_source_is_never_fetched_at_render_time() -> None:
+    """That would be an SSRF surface and a dependency on someone else's uptime."""
+    calls: list[str] = []
+
+    def _load(path: str):
+        calls.append(path)
+        return PNG_BYTES, "image/png", None
+
+    html = render_handout_html(
+        _with_figure("![x](https://example.com/x.png)"), load_figure=_load
+    )
+
+    assert calls == []
+    assert "example.com" not in html
+
+
+def test_without_a_loader_the_body_still_renders() -> None:
+    html = render_handout_html(_with_figure("Just prose."))
+
+    assert "Just prose." in html

@@ -1,4 +1,4 @@
-"""SQLAlchemy models for academic items and the passages they were written from."""
+"""SQLAlchemy models for academic items, their sources and their figures."""
 
 from datetime import datetime
 from typing import Any
@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base
+from app.modules.academic_items.domain.figures import FigureSource
 from app.modules.generation.domain.entities import GenerationItemStatus
 
 
@@ -139,6 +140,83 @@ class AcademicItemSource(Base):
     #: instead of a uuid.
     section: Mapped[str | None] = mapped_column(String(512))
     excerpt: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AcademicItemFigure(Base):
+    """One illustration attached to an academic item.
+
+    The bytes live in MinIO and only the object path is here, exactly as with an
+    uploaded document: the database is the wrong shape for a blob, and a
+    container filesystem does not survive a deploy.
+
+    ``licence`` and ``attribution`` are not metadata for completeness's sake —
+    they are the credit line that has to be printed next to the image, and a row
+    that cannot produce one has no business being rendered. They are stored
+    rather than fetched again at render time so a handout reprinted next
+    semester carries the same credit as the one handed out today.
+
+    ``query`` is what the generator asked for, kept for two reasons: it is how a
+    figure is matched back to its placeholder while the item is being assembled,
+    and it is the only way to tell later whether a bad illustration was a bad
+    search or a bad description.
+    """
+
+    __tablename__ = "academic_item_figure"
+    __table_args__ = (
+        # Every listing is "the figures of this item, in order".
+        Index(
+            "ix_academic_item_figure_item_position",
+            "academic_item_id",
+            "position",
+        ),
+    )
+
+    uuid: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    academic_item_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("academic_items.uuid", ondelete="CASCADE"),
+        nullable=False,
+    )
+    #: Denormalised owner. The ownership filter lives in the repository and this
+    #: is what it filters on, so reading a figure never needs a join to prove
+    #: who it belongs to.
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.uuid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    #: Order within the item, matching the order the placeholders appeared in.
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: The description the generator asked for.
+    query: Mapped[str] = mapped_column(String(300), nullable=False)
+    #: Alt text. Required, because a figure a screen reader cannot describe is
+    #: a figure that excludes a student.
+    alt_text: Mapped[str] = mapped_column(String(500), nullable=False)
+    caption: Mapped[str | None] = mapped_column(String(500))
+    source: Mapped[FigureSource] = mapped_column(
+        Enum(
+            FigureSource,
+            name="figure_source",
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+    )
+    #: The page a reader can go to in order to verify the credit.
+    source_url: Mapped[str | None] = mapped_column(String(1024))
+    #: Where the bytes are in object storage.
+    figure_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    licence: Mapped[str] = mapped_column(String(200), nullable=False)
+    licence_url: Mapped[str | None] = mapped_column(String(1024))
+    attribution: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

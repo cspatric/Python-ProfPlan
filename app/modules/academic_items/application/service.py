@@ -13,8 +13,12 @@ from app.modules.academic_items.domain.exceptions import (
     HandoutNotReadyError,
     InvalidModuleError,
 )
+from app.modules.academic_items.infrastructure.figure_repository import (
+    AcademicItemFigureRepository,
+)
 from app.modules.academic_items.infrastructure.models import (
     AcademicItem,
+    AcademicItemFigure,
     AcademicItemSource,
 )
 from app.modules.academic_items.infrastructure.repository import (
@@ -45,11 +49,13 @@ class AcademicItemService:
         repository: AcademicItemRepository,
         modules: ModuleRepository,
         sources: AcademicItemSourceRepository,
+        figures: AcademicItemFigureRepository | None = None,
     ) -> None:
         self._session = session
         self._repo = repository
         self._modules = modules
         self._sources = sources
+        self._figures = figures
 
     async def _ensure_module_owned(self, module_id: UUID, user_id: UUID) -> None:
         if await self._modules.get_by_id(module_id, user_id) is None:
@@ -94,6 +100,20 @@ class AcademicItemService:
         # called `list`, which shadows the builtin inside the class body and
         # makes `list[...]` a call on a function.
         return await self._sources.list_for_item(item_id)
+
+    async def figures(
+        self, *, user_id: UUID, item_id: UUID
+    ) -> Sequence[AcademicItemFigure]:
+        """The illustrations attached to this item, in the content's order.
+
+        Ownership is checked by loading the item first, same as the sources: a
+        figure is stored material and reaching it through an item id alone would
+        be a way into somebody else's bucket.
+        """
+        await self.get(user_id=user_id, item_id=item_id)
+        if self._figures is None:
+            return []
+        return await self._figures.list_for_item(item_id, user_id)
 
     async def handout(self, *, user_id: UUID, item_id: UUID) -> HandoutContext:
         """The item, described the way the printable handout needs it."""
