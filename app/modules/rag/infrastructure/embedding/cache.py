@@ -58,7 +58,12 @@ class CachedEmbedding:
             )
             for index, vector in zip(missing, fresh, strict=True):
                 results[index] = vector
-                await self._cache.set_json(keys[index], vector)
+            # One pipelined batch per group instead of a round trip per chunk:
+            # a large document is thousands of vectors, and writing them one at
+            # a time is thousands of sequential waits on the network.
+            await self._cache.set_many_json(
+                [(keys[index], results[index]) for index in missing]
+            )
 
         return [vector for vector in results if vector is not None]
 
@@ -79,5 +84,6 @@ def build_cached_embedder(redis: Redis | None = None) -> CachedEmbedding:
         redis if redis is not None else redis_client,
         prefix="embedding:",
         ttl=settings.embedding_cache_ttl_seconds,
+        batch_size=settings.redis_batch_size,
     )
     return CachedEmbedding(OllamaEmbedding(), cache, settings.embedding_model)
