@@ -57,11 +57,40 @@ def _pgbouncer_kwargs() -> dict[str, Any]:
     }
 
 
+def _pool_sizes() -> tuple[int, int]:
+    """The per-process pool, derived from the container's connection budget.
+
+    The limit that matters is what one CONTAINER presents to the pooler, and a
+    container holds one pool per uvicorn worker. Sizing per process means every
+    change to the worker count silently multiplies the container's footprint and
+    has to be re-derived by hand; sizing per container means it does not.
+
+    A third of the share is kept as steady pool and the rest as overflow, so an
+    idle container holds few connections while a burst can still use its whole
+    budget. Both are floored at 1: a container may run more workers than it has
+    budget for, and a worker with a zero-sized pool cannot serve anything.
+
+    Explicit settings win when present, for the case where a process genuinely
+    needs numbers the budget would not produce.
+    """
+    workers = max(1, _settings.uvicorn_workers)
+    share = max(2, _settings.db_client_conn_budget // workers)
+    size = _settings.db_pool_size
+    overflow = _settings.db_max_overflow
+    if size is None:
+        size = max(1, share // 3)
+    if overflow is None:
+        overflow = max(1, share - size)
+    return size, overflow
+
+
+_pool_size, _max_overflow = _pool_sizes()
+
 engine: AsyncEngine = create_async_engine(
     _runtime_url(),
     pool_pre_ping=True,
-    pool_size=_settings.db_pool_size,
-    max_overflow=_settings.db_max_overflow,
+    pool_size=_pool_size,
+    max_overflow=_max_overflow,
     pool_timeout=_settings.db_pool_timeout,
     future=True,
     **_pgbouncer_kwargs(),
@@ -93,6 +122,46 @@ WorkerSessionFactory = async_sessionmaker(
 )
 
 
+def _replica_url() -> str:
+    """The read replica's URL, or empty when there is no replica."""
+    if not _settings.database_replica_url:
+        return ""
+    url = make_url(_settings.database_replica_url)
+    if _settings.db_pgbouncer:
+        url = url.update_query_dict({"prepared_statement_cache_size": "0"})
+    return url.render_as_string(hide_password=False)
+
+
+#: A second engine, built only when DATABASE_REPLICA_URL is set. Reads move off
+#: the primary by setting that one variable — no business code, no route and no
+#: repository knows whether a replica exists. When it is unset every read stays
+#: on the primary, which is exactly today's behaviour.
+replica_engine: AsyncEngine | None = (
+    create_async_engine(
+        _replica_url(),
+        pool_pre_ping=True,
+        pool_size=_pool_size,
+        max_overflow=_max_overflow,
+        pool_timeout=_settings.db_pool_timeout,
+        future=True,
+        **_pgbouncer_kwargs(),
+    )
+    if _replica_url()
+    else None
+)
+
+ReplicaSessionFactory = (
+    async_sessionmaker(bind=replica_engine, expire_on_commit=False, autoflush=False)
+    if replica_engine is not None
+    else None
+)
+
+
+def has_replica() -> bool:
+    """Whether a read replica is configured for this process."""
+    return ReplicaSessionFactory is not None
+
+
 async def get_session() -> AsyncGenerator[AsyncSession]:
     """FastAPI dependency that yields a transactional database session."""
     async with SessionFactory() as session:
@@ -102,3 +171,26 @@ async def get_session() -> AsyncGenerator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
+
+
+async def get_read_session() -> AsyncGenerator[AsyncSession]:
+    """A session for reads that tolerate replication lag.
+
+    Falls back to the primary when no replica is configured, so a route may
+    depend on this unconditionally and gain replica capacity the day one is
+    added. It never commits: a replica is read-only, and a route that writes
+    through this dependency is a bug worth failing loudly rather than a silent
+    write to the primary.
+    """
+    if ReplicaSessionFactory is None:
+        async with SessionFactory() as session:
+            try:
+                yield session
+            finally:
+                await session.rollback()
+        return
+    async with ReplicaSessionFactory() as session:
+        try:
+            yield session
+        finally:
+            await session.rollback()

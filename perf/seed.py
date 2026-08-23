@@ -71,7 +71,7 @@ async def main() -> None:
                 email = f"load-{uuid.uuid4().hex[:12]}@load.example.com"
                 resp = await client.post(
                     f"{API}/auth/register",
-                    json={"name": "Load", "email": email, "password": "Senha@123"},
+                    json={"name": "Load", "email": email, "password": "Str0ng@Pass1"},
                     headers={"X-Forwarded-For": _ip(i + 1)},
                 )
                 if resp.status_code not in (200, 201):

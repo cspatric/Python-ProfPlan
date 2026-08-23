@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, Request, Response
 
 from app.api.rate_limit import auth_limit
-from app.core.security import verify_password
+from app.core.security import verify_password_async
 from app.modules.auth.presentation.dependencies import CurrentUser
 from app.modules.users.presentation.dependencies import AccountDataServiceDep
 from app.modules.users.presentation.schemas import (
@@ -61,7 +61,7 @@ async def erase_my_account(
     clients disagree about.
     """
     if user.password_hash is not None:
-        if not payload.password or not verify_password(
+        if not payload.password or not await verify_password_async(
             payload.password, user.password_hash
         ):
             raise UnauthorizedError("The password does not match")

@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.security import hash_password, hash_token, verify_password
+from app.core.security import hash_password_async, hash_token, verify_password_async
 from app.modules.auth.domain.emails import (
     RenderedEmail,
     email_verification_email,
@@ -127,7 +127,7 @@ class AccountService:
         if user is None:
             raise InvalidVerificationTokenError
 
-        user.password_hash = hash_password(new_password)
+        user.password_hash = await hash_password_async(new_password)
         self._tokens.mark_used(row)
         # Whoever asked for this reset may have done so because someone else
         # had the account. Leaving old sessions alive would hand it back.
@@ -170,11 +170,12 @@ class AccountService:
         """
         changing = user.password_hash is not None
         if changing and not (
-            current_password and verify_password(current_password, user.password_hash)
+            current_password
+            and await verify_password_async(current_password, user.password_hash)
         ):
             raise InvalidCredentialsError
 
-        user.password_hash = hash_password(new_password)
+        user.password_hash = await hash_password_async(new_password)
         revoked = 0
         if changing:
             revoked = await self._refresh_tokens.revoke_all_for_user(user.uuid)

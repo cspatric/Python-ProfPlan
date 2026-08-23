@@ -144,7 +144,7 @@ def _load_pool(environment) -> None:
             email = f"load-{uuid.uuid4().hex[:12]}@load.example.com"
             resp = session.post(
                 f"{host}{API}/auth/register",
-                json={"name": "Load", "email": email, "password": "Senha@123"},
+                json={"name": "Load", "email": email, "password": "Str0ng@Pass1"},
                 headers={"X-Forwarded-For": _next_ip()},
                 timeout=60,
             )
@@ -350,7 +350,7 @@ class AuthUser(ApiUser):
             "POST",
             f"{API}/auth/register",
             name="POST /auth/register",
-            json={"name": "Churn", "email": email, "password": "Senha@123"},
+            json={"name": "Churn", "email": email, "password": "Str0ng@Pass1"},
         )
 
 

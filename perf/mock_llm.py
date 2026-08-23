@@ -50,14 +50,14 @@ _ROADMAP = json.dumps(
                 "items": [
                     {
                         "title": "Lecture notes: foundations",
-                        "kind": "conteudo",
+                        "kind": "content",
                         "when": "semana 1",
                         "prompt": "Write lecture notes on the foundations."
                         + _PROMPT_PAD,
                     },
                     {
                         "title": "Practice set: foundations",
-                        "kind": "atividade",
+                        "kind": "activity",
                         "when": "semana 2",
                         "prompt": "Create a practice set on the foundations."
                         + _PROMPT_PAD,
@@ -70,13 +70,13 @@ _ROADMAP = json.dumps(
                 "items": [
                     {
                         "title": "Lecture notes: applications",
-                        "kind": "conteudo",
+                        "kind": "content",
                         "when": "semana 3",
                         "prompt": "Write lecture notes on applications." + _PROMPT_PAD,
                     },
                     {
                         "title": "Final assessment",
-                        "kind": "prova",
+                        "kind": "exam",
                         "when": "semana 4",
                         "prompt": "Create the final assessment for the plan."
                         + _PROMPT_PAD,

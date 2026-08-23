@@ -13,6 +13,8 @@ from celery.signals import (
     worker_ready,
 )
 
+from app.core.resources import cpu_bound_concurrency
+
 logger = logging.getLogger("app.worker")
 
 celery_app = Celery(
@@ -32,6 +34,16 @@ celery_app.conf.update(
     task_acks_late=True,
     # Don't let one worker hoard several unacked tasks while others sit idle.
     worker_prefetch_multiplier=1,
+    # How many children to fork. Celery's default is one per core that
+    # os.cpu_count() reports, which is the HOST's core count — a CPU quota does
+    # not change it. A container limited to one CPU on an eight-core host
+    # therefore forks eight children that fight over one core's worth of quota,
+    # and, because the worker engine is NullPool, each of them can hold its own
+    # database connection. Deriving it from the container's actual CPU grant
+    # makes the worker tier's footprint follow the limit it was given, so
+    # raising the limit is the only thing needed to scale it.
+    worker_concurrency=int(os.getenv("CELERY_CONCURRENCY", "0"))
+    or cpu_bound_concurrency(minimum=2, per_cpu=2),
 )
 
 
