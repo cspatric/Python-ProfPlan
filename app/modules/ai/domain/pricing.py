@@ -9,10 +9,14 @@ gateway raises a counter for it. A cost report that is quietly wrong is worse
 than one that says "I do not know what this model costs", because only the
 second one gets fixed.
 
-**Prefixes, not exact names.** Providers append dates and revisions
-(`claude-sonnet-5-20260114`, `gpt-4o-2026-05-13`) and the price does not change
+**Prefixes, not exact names.** Bedrock appends dates and revisions
+(`us.anthropic.claude-haiku-4-5-20251001-v1:0`) and the price does not change
 with them. The longest matching prefix wins, so a specifically priced variant
 beats its family.
+
+Only what Bedrock bills is listed, plus the local models. A model from a vendor
+this application does not integrate with is deliberately absent: it comes back
+unpriced and raises the counter, which is the honest answer.
 
 Prices are USD per **million** tokens, list price, as published in August 2026.
 They are not read at runtime from anywhere: a deployment that wants different
@@ -28,20 +32,13 @@ logger = logging.getLogger("app.ai")
 
 #: model prefix -> (input USD per 1M tokens, output USD per 1M tokens)
 PRICES_USD_PER_MILLION: dict[str, tuple[float, float]] = {
-    # Anthropic, direct.
+    # Anthropic, through Bedrock — which is the only way this application
+    # reaches an Anthropic model. There is no direct-vendor entry here on
+    # purpose: a price for a provider that no longer exists in the code is a
+    # number nobody will ever check again.
     #
-    # The Sonnet family price here is the 4.x list price. Sonnet 5 through
-    # Bedrock is cheaper (see below), which is evidence that the direct price
-    # for it is lower too, and evidence is not a number: check Anthropic's
-    # price page before running the direct provider on Sonnet 5, because a
-    # priced-but-wrong model is worse than an unpriced one, and the unpriced
-    # alert will not fire for it.
-    "claude-opus": (15.00, 75.00),
-    "claude-sonnet": (3.00, 15.00),
-    "claude-haiku": (1.00, 5.00),
-    # Anthropic, through Bedrock. Not the same numbers as the direct API, for
-    # two reasons that both surfaced by reading rate cards rather than
-    # remembering prices.
+    # These are not the same numbers as Anthropic's direct API, for two reasons
+    # that both surfaced by reading rate cards rather than remembering prices.
     #
     # 1. Bedrock quotes a *regional* rate and a *global* one, and the regional
     #    is 10% dearer. A `us.` inference profile, which is what this
@@ -65,23 +62,17 @@ PRICES_USD_PER_MILLION: dict[str, tuple[float, float]] = {
     "amazon.nova-lite": (0.06, 0.24),
     "amazon.nova-micro": (0.035, 0.14),
     "meta.llama3": (0.72, 0.72),
-    # OpenAI
-    "gpt-4o-mini": (0.15, 0.60),
-    "gpt-4o": (2.50, 10.00),
-    "gpt-4.1-mini": (0.40, 1.60),
-    "gpt-4.1": (2.00, 8.00),
-    # Google
-    "gemini-2.5-pro": (1.25, 10.00),
-    "gemini-2.5-flash-lite": (0.10, 0.40),
-    "gemini-2.5-flash": (0.30, 2.50),
-    "gemini-2.0-flash": (0.10, 0.40),
-    # Google also serves rolling aliases, and they are what a deployment
-    # usually configures. They are priced as whatever they currently point at;
-    # the day that changes, the alert on unpriced calls does not fire, so this
-    # line is the one to re-read when a bill surprises somebody.
-    "gemini-flash-lite-latest": (0.10, 0.40),
-    "gemini-flash-latest": (0.30, 2.50),
-    "gemini-pro-latest": (1.25, 10.00),
+    # OpenAI's open-weight family, which is what Bedrock serves of OpenAI.
+    #
+    # NOT PRICED YET, deliberately left out rather than estimated. The rule at
+    # the top of this file applies to me too: a guessed number here would be a
+    # cost report that is quietly wrong, and the unpriced counter is the alert
+    # that says "somebody added a model and nobody added its price". Read the
+    # two rates off the Bedrock console (or ListFoundationModelAgreementOffers)
+    # and add them here:
+    #
+    #   "openai.gpt-oss-120b": (?, ?),
+    #   "openai.gpt-oss-20b": (?, ?),
 }
 
 #: Models that run on hardware already paid for. Zero is the true price here,

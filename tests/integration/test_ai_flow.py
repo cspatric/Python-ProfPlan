@@ -8,7 +8,9 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
-_PROVIDERS = {"claude", "bedrock", "openai", "gemini", "ollama"}
+#: The whole chain. Three model families, all served by Bedrock, then the local
+#: floor. The names are families rather than vendors on purpose.
+_PROVIDERS = {"claude", "nova", "openai", "ollama"}
 
 
 class TestAiHealth:
@@ -43,6 +45,6 @@ class TestProviderToggle:
 
     async def test_non_admin_cannot_toggle(self, auth_client):
         resp = await auth_client.patch(
-            "/api/v1/ai/providers/gemini", json={"enabled": False}
+            "/api/v1/ai/providers/claude", json={"enabled": False}
         )
         assert resp.status_code == 403

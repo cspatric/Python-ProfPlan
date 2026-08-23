@@ -1,11 +1,22 @@
 """LLM gateway: try providers in order with per-provider circuit breakers.
 
-There are two chains, one per tier (see ``domain/tiers.py``). The standard one
-answers the calls that decide something, the roadmap and its judge; the fast one
-answers the bulk, one activity at a time, which is where the tokens are. Two
-chains rather than one chain with a smaller model, because the provider that is
-best at bulk drafting for the money is not necessarily the one that should
-decide a roadmap.
+Every remote model is reached through **Amazon Bedrock** — one account, one
+bill, one credential, one quota — but the chain still runs across several model
+*families*, because a fallback that only ever retries the same family is not
+much of a fallback. Claude, Amazon's Nova and OpenAI's open-weight models are
+all Bedrock models here; only the last link, Ollama, is local.
+
+There are two chains, one per tier (see ``domain/tiers.py``), and the tier picks
+two things at once: which family answers first, and which size of that family's
+models is used. The standard tier answers the calls that decide something, the
+roadmap and its judge, and it leads with Claude. The fast tier answers the bulk,
+one activity at a time, which is where the tokens are, and it leads with Nova —
+Claude is deliberately absent from it, because forty drafting calls on a
+frontier model is a bill dominated by the least difficult work.
+
+The chains are configuration (``LLM_STANDARD_CHAIN`` / ``LLM_FAST_CHAIN``), so
+reordering them, or adding a family Bedrock starts serving tomorrow, is a
+setting and not a rewrite.
 
 A provider named in a chain but with no cheap model of its own answers with its
 only model. Falling back to the expensive model is a larger bill; falling back
@@ -39,10 +50,7 @@ from app.modules.ai.domain.tiers import Tier
 from app.modules.ai.domain.usage import TokenUsage, record
 from app.modules.ai.infrastructure.gateway.circuit_breaker import CircuitBreaker
 from app.modules.ai.infrastructure.providers.bedrock import BedrockProvider
-from app.modules.ai.infrastructure.providers.claude import ClaudeProvider
-from app.modules.ai.infrastructure.providers.gemini import GeminiProvider
 from app.modules.ai.infrastructure.providers.ollama import OllamaProvider
-from app.modules.ai.infrastructure.providers.openai import OpenAIProvider
 
 logger = logging.getLogger("app.ai")
 
@@ -206,19 +214,28 @@ def build_gateway(redis) -> LLMGateway:
             reset_seconds=settings.llm_circuit_reset_seconds,
         )
 
-    claude, bedrock, openai, gemini, ollama = (
-        ClaudeProvider(),
-        BedrockProvider(),
-        OpenAIProvider(),
-        GeminiProvider(),
+    # Three model families over one vendor, plus the local floor. The chains
+    # below decide which of them answers which tier.
+    families = [
+        BedrockProvider(
+            name="claude",
+            model=settings.bedrock_claude_model,
+            fast_model=settings.bedrock_claude_fast_model,
+        ),
+        BedrockProvider(
+            name="nova",
+            model=settings.bedrock_nova_model,
+            fast_model=settings.bedrock_nova_fast_model,
+        ),
+        BedrockProvider(
+            name="openai",
+            model=settings.bedrock_openai_model,
+            fast_model=settings.bedrock_openai_fast_model,
+        ),
         OllamaProvider(),
-    )
+    ]
     providers: list[tuple[LLMProvider, CircuitBreaker]] = [
-        (claude, _breaker(claude.name)),
-        (bedrock, _breaker(bedrock.name)),
-        (openai, _breaker(openai.name)),
-        (gemini, _breaker(gemini.name)),
-        (ollama, _breaker(ollama.name)),
+        (provider, _breaker(provider.name)) for provider in families
     ]
 
     def _chain(raw: str) -> tuple[str, ...]:

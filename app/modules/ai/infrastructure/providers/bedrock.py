@@ -3,10 +3,22 @@
 Two things make this simpler than Bedrock usually is.
 
 **A Bedrock API key, not SigV4.** The key goes in an `Authorization: Bearer`
-header, so this is an HTTP call like every other provider here and needs no
-boto3, no credential chain and no request signing. That keeps the provider a
-thirty-line adapter instead of a dependency with its own opinions about
-threads, and it is why this file looks like `claude.py`.
+header, so this is a plain HTTP call and needs no boto3, no credential chain
+and no request signing. That keeps this a small adapter instead of a dependency
+with its own opinions about threads inside an async application.
+
+**One class, several providers.** Every remote model family in the fallback
+chain is a Bedrock model, so what distinguishes one link of the chain from the
+next is the *family* it addresses, not the vendor it talks to: Anthropic's
+Claude, Amazon's Nova and OpenAI's open-weight models are three instances of
+this class over one transport and one credential. The tier still picks the
+size within a family, which is why each instance carries two model ids.
+
+A consequence worth being honest about: three families behind one vendor means
+three circuit breakers that are not independent failure domains. They protect
+against a single family being throttled or losing access — which is real, since
+Bedrock quotas are per model — but not against Bedrock itself being down. That
+is what the local Ollama at the end of the chain is for.
 
 **Converse, not InvokeModel.** Converse is Bedrock's model-agnostic shape:
 `messages`, `system`, `inferenceConfig`, and a `usage` block that reports the
@@ -30,17 +42,21 @@ from app.modules.ai.infrastructure.providers.base import HTTPLLMProvider
 
 
 class BedrockProvider(HTTPLLMProvider):
-    """Generates text via Amazon Bedrock's Converse API."""
+    """Generates text via Amazon Bedrock's Converse API.
 
-    name = "bedrock"
+    ``name`` is the model family as the chain and ``GET /ai/health`` know it
+    ("claude", "nova", "openai"), not the vendor: the vendor is Bedrock for all
+    of them, and naming three links "bedrock" would make the chain unreadable.
+    """
 
-    def __init__(self) -> None:
+    def __init__(self, *, name: str, model: str, fast_model: str = "") -> None:
         settings = get_settings()
         super().__init__(timeout=settings.llm_timeout_seconds)
+        self.name = name
         self._api_key = settings.bedrock_api_key
         self._region = settings.bedrock_region
-        self._model = settings.bedrock_model
-        self._fast_model = settings.bedrock_fast_model
+        self._model = model
+        self._fast_model = fast_model
         self._max_tokens = settings.llm_max_tokens
 
     def _endpoint(self, model: str) -> str:
