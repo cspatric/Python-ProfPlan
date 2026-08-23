@@ -32,7 +32,7 @@ def _roadmap(*, items: int = 2, prompt: str = GOOD_PROMPT, titles=None) -> Roadm
                 "items": [
                     {
                         "title": titles[i] if titles else f"Item {i}",
-                        "kind": "conteudo",
+                        "kind": "content",
                         "date": None,
                         "prompt": prompt,
                     }

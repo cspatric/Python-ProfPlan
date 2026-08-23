@@ -5,6 +5,7 @@ covered by the integration suite (skipped where no LLM is configured).
 """
 
 from datetime import date
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -14,6 +15,12 @@ from app.modules.generation.application.service import (
     GenerationService,
     _split_period,
 )
+from app.modules.generation.domain.entities import (
+    GenerationItemStatus,
+    GenerationRunStatus,
+)
+from app.modules.generation.infrastructure.models import PlanGeneration
+from app.modules.notifications.domain.entities import NotificationKind
 from app.modules.teaching_plans.domain.exceptions import InvalidSubjectError
 
 
@@ -119,3 +126,123 @@ class TestPlanRoadmapSubjectOwnership:
 
     async def test_default_input_is_non_empty(self):
         assert GenerationService.default_input().strip()
+
+
+class TestRunCompletionNotifies:
+    """Announcing a finished run.
+
+    `_recompute_run` runs once per finished item, and only the last one moves
+    the run out of RUNNING. The guard under test is what stops a forty-item
+    plan from sending forty notifications — which is not a cosmetic problem: it
+    is a bell nobody would ever open again.
+    """
+
+    @staticmethod
+    def _run(status: GenerationRunStatus) -> PlanGeneration:
+        return PlanGeneration(
+            uuid=uuid4(), plan_id=uuid4(), user_id=uuid4(), status=status
+        )
+
+    def _service_for(self, run: PlanGeneration, counts: dict, subject_id=None):
+        subject_id = subject_id or uuid4()
+
+        class FakeRepo:
+            async def get_for_processing(self, _id):
+                return run
+
+            async def item_status_counts(self, _id):
+                return counts
+
+        class FakePlans:
+            async def get_for_processing(self, _id):
+                return SimpleNamespace(subject_id=uuid4())
+
+        class FakeSubjects:
+            # The ownership-scoped read, not the worker one: a run already knows
+            # whose it is, so the notification path filters by that owner rather
+            # than looking one up.
+            async def get_by_id(self, _subject_id, _user_id):
+                # `uuid` as well as the name: the notification carries the
+                # subject id so the alert can link to a plan, whose page is
+                # nested under its subject.
+                return SimpleNamespace(
+                    uuid=subject_id, name="Biology", user_id=run.user_id
+                )
+
+        class FakeSession:
+            async def commit(self):
+                pass
+
+        sent: list[dict] = []
+
+        class FakeNotifier:
+            def notify(self, **kwargs):
+                sent.append(kwargs)
+
+        service = _service(repo=FakeRepo(), plans=FakePlans(), subjects=FakeSubjects())
+        service._session = FakeSession()
+        service._notifier = FakeNotifier()
+        return service, sent
+
+    async def test_the_last_item_announces_a_ready_plan(self):
+        run = self._run(GenerationRunStatus.RUNNING)
+        subject_id = uuid4()
+        service, sent = self._service_for(
+            run, {GenerationItemStatus.COMPLETED: 8}, subject_id
+        )
+
+        await service._recompute_run(run.uuid)
+
+        assert run.status is GenerationRunStatus.COMPLETED
+        assert len(sent) == 1
+        assert sent[0]["kind"] is NotificationKind.PLAN_READY
+        # The subject's name, because a plan has no title of its own.
+        assert sent[0]["params"]["subject_name"] == "Biology"
+        # The subject id travels too, because a plan's page lives under it.
+        assert sent[0]["params"]["subject_id"] == subject_id
+        assert sent[0]["entity_id"] == run.plan_id
+
+    async def test_an_item_still_in_flight_announces_nothing(self):
+        run = self._run(GenerationRunStatus.RUNNING)
+        service, sent = self._service_for(
+            run,
+            {GenerationItemStatus.COMPLETED: 3, GenerationItemStatus.PENDING: 5},
+        )
+
+        await service._recompute_run(run.uuid)
+
+        assert run.status is GenerationRunStatus.RUNNING
+        assert sent == []
+
+    async def test_a_run_already_terminal_does_not_announce_again(self):
+        # The idempotency that matters: a retried task recomputing a finished
+        # run must not send a second alert about the same plan.
+        run = self._run(GenerationRunStatus.COMPLETED)
+        service, sent = self._service_for(run, {GenerationItemStatus.COMPLETED: 8})
+
+        await service._recompute_run(run.uuid)
+
+        assert sent == []
+
+    async def test_some_failed_items_announce_a_partial_plan(self):
+        run = self._run(GenerationRunStatus.RUNNING)
+        service, sent = self._service_for(
+            run,
+            {GenerationItemStatus.COMPLETED: 6, GenerationItemStatus.FAILED: 2},
+        )
+
+        await service._recompute_run(run.uuid)
+
+        assert run.status is GenerationRunStatus.PARTIAL
+        assert sent[0]["kind"] is NotificationKind.PLAN_PARTIAL
+        # How many failed, so the message can say what is missing.
+        assert sent[0]["params"]["failed"] == 2
+
+    async def test_without_a_notifier_the_run_still_finishes(self):
+        run = self._run(GenerationRunStatus.RUNNING)
+        service, _ = self._service_for(run, {GenerationItemStatus.COMPLETED: 4})
+        service._notifier = None
+
+        await service._recompute_run(run.uuid)
+
+        assert run.status is GenerationRunStatus.COMPLETED

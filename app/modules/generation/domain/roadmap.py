@@ -15,7 +15,7 @@ class PlannedItem(BaseModel):
     kind: str = Field(
         min_length=1,
         max_length=64,
-        description="one of the kinds listed in the prompt, e.g. prova, atividade",
+        description="one of the kinds listed in the prompt, e.g. exam, activity",
     )
     # Deliberately a string, not a `date`. The planner is asked for an ISO day
     # and usually gives one, but a model that answers "semana 3" must not

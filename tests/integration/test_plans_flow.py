@@ -171,12 +171,12 @@ async def test_requested_counts_must_be_of_an_allowed_kind(auth_client, subject_
             "class_duration": 50,
             "class_per_week": 2,
             "exam_count": 2,
-            "item_kinds": ["conteudo", "leitura"],
+            "item_kinds": ["content", "reading"],
         },
     )
 
     assert resp.status_code == 422
-    assert "prova" in resp.text
+    assert "exam" in resp.text
 
 
 async def test_composition_within_the_allowed_kinds_is_accepted(
@@ -193,7 +193,7 @@ async def test_composition_within_the_allowed_kinds_is_accepted(
             "activity_count": 4,
             "exam_count": 1,
             "assignment_count": 1,
-            "item_kinds": ["conteudo", "atividade", "prova", "trabalho"],
+            "item_kinds": ["content", "activity", "exam", "assignment"],
         },
     )
 

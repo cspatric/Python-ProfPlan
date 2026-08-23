@@ -95,6 +95,10 @@ def test_known_kinds_survive_the_round_trip() -> None:
 
 def test_kinds_in_other_languages_are_recognised() -> None:
     assert normalize_kind("exam") is ItemKind.EXAM
+    # Portuguese, on purpose: this is model *output*, not code. The planner
+    # writes in the teacher's language, so a Portuguese plan comes back with
+    # Portuguese labels and the alias table is what keeps them from all
+    # collapsing to the fallback.
     assert normalize_kind("Prova escrita") is ItemKind.EXAM
     assert normalize_kind("hands-on activity") is ItemKind.ACTIVITY
     assert normalize_kind("Trabalho em grupo") is ItemKind.ASSIGNMENT

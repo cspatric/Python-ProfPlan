@@ -41,7 +41,7 @@ fences, no commentary), matching exactly this shape:
       "items": [
         {
           "title": "item title",
-          "kind": "one of: conteudo, leitura, exercicios, atividade, laboratorio, projeto, seminario, trabalho, quiz, prova, bibliografia",
+          "kind": "one of: content, reading, exercises, activity, lab, project, seminar, assignment, quiz, exam, bibliography",
           "date": "the day this item happens, as YYYY-MM-DD, inside the plan period",
           "prompt": "a self-contained instruction telling another AI exactly what to generate for this item"
         }
@@ -88,13 +88,13 @@ a hands-on activity and one written test at the end.
       "items": [
         {
           "title": "Cell theory and the discovery of the cell",
-          "kind": "conteudo",
+          "kind": "content",
           "date": "2026-03-03",
           "prompt": "Write the class content for a 50-minute introductory lesson on cell theory, for high-school students with no prior biology. Cover the three postulates of cell theory, the historical path from Hooke and Leeuwenhoek to Schwann and Virchow, and why the microscope was the precondition for the theory. Use plain language, include one analogy for cell size (orders of magnitude vs everyday objects), and end with 3 review questions and their answers."
         },
         {
           "title": "Microscopy lab: observing onion epidermis cells",
-          "kind": "atividade",
+          "kind": "activity",
           "date": "2026-03-12",
           "prompt": "Write a hands-on lab activity for high-school students, to be run in one 50-minute class, in which they prepare and observe an onion epidermis slide under an optical microscope. Include: materials list (assume a basic school lab), numbered step-by-step preparation instructions, safety notes, what students should draw and label in their report, and 3 guiding questions connecting what they see to cell theory. Add a short teacher's note on the two mistakes students most often make."
         }
@@ -106,13 +106,13 @@ a hands-on activity and one written test at the end.
       "items": [
         {
           "title": "Organelles and their functions",
-          "kind": "conteudo",
+          "kind": "content",
           "date": "2026-03-19",
           "prompt": "Write the class content for two 50-minute lessons for high-school students on eukaryotic cell organelles: nucleus, mitochondria, ribosomes, endoplasmic reticulum, Golgi apparatus, lysosomes, and (for plant cells) chloroplasts and cell wall. For each, give its structure in 2-3 sentences, its function, and one consequence of it failing. Include a comparison table of animal vs plant cells and end with 5 review questions with answers."
         },
         {
           "title": "Written test: introduction to the cell",
-          "kind": "prova",
+          "kind": "exam",
           "date": "2026-03-26",
           "prompt": "Write a 50-minute written test for high-school students covering cell theory, prokaryotes vs eukaryotes, the microscopy lab on onion epidermis, and organelle functions. Structure: 6 multiple-choice questions (4 options each), 2 short-answer questions, and 1 question interpreting a described microscope image. Include the answer key and the point value of each question, totalling 10 points."
         }
