@@ -28,6 +28,23 @@ class SubjectRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_for_processing(self, subject_id: UUID) -> Subject | None:
+        """Return a subject by id without user scoping (worker use).
+
+        This does not weaken the ownership invariant, and the difference is
+        worth stating: every other read *filters by* an owner the request
+        already proved. A worker has no request and no acting user — it is
+        *determining* who the owner is, in order to send them a notification
+        about their own document. The result is a recipient, never a filter.
+        """
+        result = await self._session.execute(
+            select(Subject).where(
+                Subject.uuid == subject_id,
+                Subject.deleted_at.is_(None),
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def list_by_user(
         self, user_id: UUID, *, limit: int, offset: int
     ) -> list[Subject]:

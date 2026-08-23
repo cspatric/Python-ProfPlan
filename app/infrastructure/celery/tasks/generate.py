@@ -18,6 +18,9 @@ from app.infrastructure.celery.worker import celery_app
 from app.infrastructure.database.session import WorkerSessionFactory
 from app.infrastructure.redis.client import new_redis_client
 from app.infrastructure.telemetry.metrics import PLAN_DRAFT_SECONDS, PLAN_DRAFTS
+from app.modules.academic_items.infrastructure.images.factory import (
+    build_figure_resolver,
+)
 from app.modules.academic_items.infrastructure.source_repository import (
     AcademicItemSourceRepository,
 )
@@ -31,6 +34,10 @@ from app.modules.generation.infrastructure.plan_document_repository import (
     PlanDocumentRepository,
 )
 from app.modules.generation.infrastructure.repository import GenerationRepository
+from app.modules.notifications.application.notifier import Notifier
+from app.modules.notifications.infrastructure.repository import (
+    NotificationRepository,
+)
 from app.modules.rag.application.retrieval_service import RetrievalService
 from app.modules.rag.application.search_service import SearchService
 from app.modules.rag.infrastructure.embedding.cache import build_cached_embedder
@@ -60,6 +67,8 @@ def _build_service(session: AsyncSession, redis: Redis) -> GenerationService:
         subjects=SubjectRepository(session),
         plan_docs=PlanDocumentRepository(session),
         sources=AcademicItemSourceRepository(session),
+        figures=build_figure_resolver(session, redis),
+        notifier=Notifier(NotificationRepository(session)),
     )
 
 

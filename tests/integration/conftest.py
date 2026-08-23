@@ -31,6 +31,9 @@ from app.modules.documents.infrastructure import (  # noqa: F401
 from app.modules.generation.infrastructure import (  # noqa: F401
     models as _generation_models,
 )
+from app.modules.notifications.infrastructure import (  # noqa: F401
+    models as _notification_models,
+)
 from app.modules.plan_modules.infrastructure import (  # noqa: F401
     models as _module_models,
 )
@@ -50,7 +53,9 @@ _TABLES = (
     "subjects, plans, modules, academic_items, "
     "academic_item_category, academic_item_category_types, "
     "document_format, document, document_content, chunks, "
-    "plan_generation, plan_document, ai_provider, icons, colors"
+    "plan_generation, plan_document, ai_provider, academic_item_figure, "
+    "notifications, "
+    "icons, colors"
 )
 
 
@@ -124,7 +129,7 @@ async def user_factory():
     async def _create(
         email: str = "user@test.com",
         name: str = "Test User",
-        password: str = "Senha@123",
+        password: str = "Str0ng@Pass1",
     ):
         async with SessionFactory() as session:
             user = await UserRepository(session).create(
@@ -142,7 +147,7 @@ async def auth_client(client, user_factory):
     await user_factory(email="domain@test.com")
     await client.post(
         "/api/v1/auth/login",
-        json={"email": "domain@test.com", "password": "Senha@123"},
+        json={"email": "domain@test.com", "password": "Str0ng@Pass1"},
     )
     return client
 
@@ -197,7 +202,7 @@ async def admin_client(client, user_factory):
         await session.commit()
     await client.post(
         "/api/v1/auth/login",
-        json={"email": "admin@test.com", "password": "Senha@123"},
+        json={"email": "admin@test.com", "password": "Str0ng@Pass1"},
     )
     return client
 

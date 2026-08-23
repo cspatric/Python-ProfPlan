@@ -18,10 +18,15 @@ from app.modules.documents.infrastructure.repository import (
     DocumentContentRepository,
     DocumentRepository,
 )
+from app.modules.notifications.application.notifier import Notifier
+from app.modules.notifications.infrastructure.repository import (
+    NotificationRepository,
+)
 from app.modules.rag.application.indexing_service import IndexingService
 from app.modules.rag.application.ingestion_service import IngestionService
 from app.modules.rag.infrastructure.embedding.cache import build_cached_embedder
 from app.modules.rag.infrastructure.repository import ChunkRepository
+from app.modules.subjects.infrastructure.repository import SubjectRepository
 from app.shared.exceptions.base import AppError
 
 _MAX_RETRIES = 3
@@ -43,6 +48,8 @@ async def _run(document_id: UUID) -> None:
                 documents=DocumentRepository(session),
                 contents=DocumentContentRepository(session),
                 indexing=indexing,
+                subjects=SubjectRepository(session),
+                notifier=Notifier(NotificationRepository(session)),
             )
             await service.ingest(document_id)
     finally:

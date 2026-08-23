@@ -22,6 +22,9 @@ from app.modules.documents.presentation.router import (
 from app.modules.generation.presentation.router import (
     router as generation_router,
 )
+from app.modules.notifications.presentation.router import (
+    router as notifications_router,
+)
 from app.modules.plan_modules.presentation.router import router as modules_router
 from app.modules.rag.presentation.router import router as rag_router
 from app.modules.subjects.presentation.router import router as subjects_router
@@ -43,4 +46,5 @@ api_router.include_router(documents_router)
 api_router.include_router(rag_router)
 api_router.include_router(ai_router)
 api_router.include_router(audit_router)
+api_router.include_router(notifications_router)
 api_router.include_router(generation_router)
