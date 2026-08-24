@@ -1,5 +1,22 @@
-"""Password hashing (Argon2id) and JWT helpers."""
+"""Password hashing (Argon2id) and JWT helpers.
 
+Argon2 is expensive on purpose, which makes it the one piece of CPU work in the
+request path heavy enough to matter. Two rules keep it from becoming everybody
+else's problem:
+
+* **Never on the event loop.** The async wrappers below hand the work to a
+  thread, so a login burst cannot stall unrelated requests. argon2-cffi releases
+  the GIL, so threads genuinely parallelise here.
+* **Bounded.** A semaphore sized from the container's own CPU grant caps how
+  many hashes run at once. Past that, logins queue instead of starving the
+  process, and the bound re-derives itself when the CPU limit changes — there is
+  no number to retune when the deployment grows.
+
+The synchronous functions stay: migrations, ``scripts/create_user.py`` and the
+test fixtures call them from places where there is no event loop to protect.
+"""
+
+import asyncio
 import hashlib
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -10,11 +27,19 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from app.core.config import get_settings
+from app.core.resources import cpu_bound_concurrency
 
 _settings = get_settings()
 
 # Argon2id is the default variant of argon2-cffi's PasswordHasher.
 _password_hasher = PasswordHasher()
+
+#: Concurrent Argon2 operations allowed in this process. Two per CPU: one lane
+#: computing while another is scheduled keeps the cores busy without letting a
+#: login flood queue unboundedly in the thread pool.
+_HASH_CONCURRENCY = cpu_bound_concurrency(minimum=2, per_cpu=2)
+
+_hash_slots: asyncio.Semaphore | None = None
 
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
@@ -39,6 +64,36 @@ def verify_password(password: str, password_hash: str) -> bool:
 def password_needs_rehash(password_hash: str) -> bool:
     """Return True when the stored hash should be upgraded."""
     return _password_hasher.check_needs_rehash(password_hash)
+
+
+def hash_concurrency() -> int:
+    """The number of Argon2 operations this process runs at once."""
+    return _HASH_CONCURRENCY
+
+
+def _slots() -> asyncio.Semaphore:
+    """The semaphore, created on first use inside the running loop.
+
+    Built lazily rather than at import: this module is imported by the Celery
+    worker and by scripts, where binding a semaphore to a loop that does not
+    exist yet would fail.
+    """
+    global _hash_slots
+    if _hash_slots is None:
+        _hash_slots = asyncio.Semaphore(_HASH_CONCURRENCY)
+    return _hash_slots
+
+
+async def hash_password_async(password: str) -> str:
+    """Hash a password off the event loop, bounded by the CPU grant."""
+    async with _slots():
+        return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(password: str, password_hash: str) -> bool:
+    """Verify a password off the event loop, bounded by the CPU grant."""
+    async with _slots():
+        return await asyncio.to_thread(verify_password, password, password_hash)
 
 
 # --------------------------------------------------------------------------- #

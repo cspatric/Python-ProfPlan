@@ -21,6 +21,10 @@ from app.modules.audit.domain.entities import AuditAction
 
 _OLLAMA = "ollama"
 _ENTITY = "ai_provider"
+#: Every remote family is served by Bedrock, so they share one credential: a key
+#: that works for one works for all, and a missing key takes the whole remote
+#: half of the chain out at once.
+_BEDROCK_FAMILIES = frozenset({"claude", "nova", "openai"})
 
 
 @dataclass(slots=True)
@@ -53,13 +57,9 @@ class AiProvidersService:
         self._audit = audit
 
     def _configured(self, name: str) -> bool:
-        return {
-            "claude": bool(self._settings.anthropic_api_key),
-            "bedrock": bool(self._settings.bedrock_api_key),
-            "openai": bool(self._settings.openai_api_key),
-            "gemini": bool(self._settings.gemini_api_key),
-            _OLLAMA: True,
-        }.get(name, False)
+        if name == _OLLAMA:
+            return True  # local, needs no API key
+        return name in _BEDROCK_FAMILIES and bool(self._settings.bedrock_api_key)
 
     async def list_all(self) -> list[ProviderStatus]:
         """Return every provider's status, in fallback order."""

@@ -1,0 +1,115 @@
+flowchart TB
+
+PILLARS["`THREE PILLARS, THREE SEPARATE PIPELINES
+metrics — the widest view
+logs — the detailed view
+traces — the full flow
+each with its own storage`"]
+
+APP["`API + WORKER
+every process writes JSON,
+one line per request, to stdout —
+no files, no rotation
+audit line per business action,
+committed in the same transaction`"]
+
+PROM["`PROMETHEUS — scrapes /metrics
+Golden Signals: request rate,
+error rate, latency
+dependency state: PostgreSQL up, Redis up
+Celery queue depth
+LLM requests by provider and outcome`"]
+
+RULES["`12 ALERT RULES — versioned in the repo
+API down · error rate over 2% for 5 min
+p95 over 1 s for 10 min vs the 545 ms
+baseline (measured under load, not guessed)
+dependencies down · queue stuck or growing
+task failures after retries · all LLM
+providers down · breaker open · disk
+· memory · watchdog (fires always,
+on purpose — it has no condition)
+each rule carries a runbook annotation`"]
+
+AM["`ALERTMANAGER
+Prometheus detects, Alertmanager decides:
+groups alerts, suppresses symptoms of an
+already-reported failure, routes notifications
+no receiver connected yet —
+Slack is three steps in the runbook`"]
+
+SLO["`FOUR SLOs — 30-day window
+99% of requests without server errors
+95% answered within 500 ms
+95% of plans drafted within 2 min
+under 5% of drafts failing
+numbers that CAN be broken — an SLO
+that can never be violated is not a goal`"]
+
+TAIL["`PROMTAIL
+small agent watching the Docker socket
+autodiscovers containers — a new service
+is collected with zero configuration`"]
+
+LOKI["`LOKI — one line has everything:
+method · route · status · latency · IP
+· user agent · acting user · id · e-mail
+· role · TRACE IDENTIFIER
+one line per request, on purpose —
+not one in and one out`"]
+
+COL["`OTEL COLLECTOR
+app sends OTLP to the Collector —
+the tracing backend can be swapped
+without touching application code`"]
+
+TEMPO["`TEMPO — no published port,
+deliberately: Grafana is the only
+window into tracing
+trace context propagated THROUGH the
+Redis broker: the HTTP request and the
+4.5 s background job are ONE story —
+30 spans, two processes, one trace
+the payoff: 93% of ingestion time was
+the embedding call — a metric says
+'4.5 s', a trace says WHERE they went`"]
+
+GRAF["`GRAFANA — presents all three
+dashboard 1: API golden signals + queues
+dashboard 2: LLM — which provider answered,
+which failed, whole chain down,
+cost per user and per provider
+both live in the repo as JSON`"]
+
+CI["`VALIDATED IN CI
+promtool check rules · amtool check config
+· dashboards JSON — a broken rule lets
+Prometheus start WITH NO ALERTS:
+monitoring that looks healthy
+but stopped working`"]
+
+APP -.- PILLARS
+APP -->|"/metrics"| PROM
+PROM --> RULES --> AM
+PROM -.- SLO
+APP -->|"stdout"| TAIL --> LOKI
+APP -->|"OTLP"| COL --> TEMPO
+PROM --> GRAF
+LOKI --> GRAF
+TEMPO --> GRAF
+RULES -.- CI
+GRAF -.- CI
+
+classDef app fill:#e8efff,stroke:#2563eb,stroke-width:3px,color:#0b1220
+classDef met fill:#e7f6ef,stroke:#0f766e,stroke-width:3px,color:#0b1220
+classDef logs fill:#fff0e6,stroke:#ea580c,stroke-width:3px,color:#0b1220
+classDef traces fill:#f2ecff,stroke:#7c3aed,stroke-width:3px,color:#0b1220
+classDef top fill:#e6f7f7,stroke:#0d9488,stroke-width:3px,color:#0b1220
+classDef note fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+
+class APP app
+class PROM,RULES,AM,SLO met
+class TAIL,LOKI logs
+class COL,TEMPO traces
+class GRAF,CI top
+class PILLARS note

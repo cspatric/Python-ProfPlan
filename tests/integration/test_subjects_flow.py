@@ -53,7 +53,7 @@ async def test_user_cannot_see_other_users_subject(auth_client, user_factory):
     async with AsyncClient(transport=transport, base_url="http://testserver") as other:
         await other.post(
             "/api/v1/auth/login",
-            json={"email": "intruder@test.com", "password": "Senha@123"},
+            json={"email": "intruder@test.com", "password": "Str0ng@Pass1"},
         )
         resp = await other.get(f"{BASE}/{sid}")
         assert resp.status_code == 404

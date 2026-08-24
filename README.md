@@ -49,7 +49,6 @@ per responsibility):
 | otel-collector | `otel/opentelemetry-collector-contrib` | Telemetry pipeline | 4317, 4318 |
 | adminer | `adminer` | DB UI (development only) | 8081 |
 | pgbouncer | `edoburu/pgbouncer` | Connection pooler in front of Postgres | not exposed |
-| mailpit | `axllent/mailpit` | Catches outgoing mail in development | 8025 |
 
 Two networks: `frontend` (edge, Traefik ↔ API) and `backend` (internal —
 PostgreSQL is never exposed to the host). Named volumes persist Postgres, Redis,
@@ -217,8 +216,8 @@ autogenerate can see them.
 
 ## Authentication
 
-Cookie-based JWT authentication, with email/password and, when it is
-configured, sign in with Google. Endpoints under `/api/v1/auth`:
+JWT authentication, with email/password and, when it is configured, sign in
+with Google. Endpoints under `/api/v1/auth`:
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -242,6 +241,14 @@ Security properties:
   stored only as a SHA-256 hash in `refresh_tokens`.
 - **HttpOnly** cookies, `Secure` (set `COOKIE_SECURE=true` behind HTTPS) and
   `SameSite`.
+- **Two transports for one token.** A browser gets the access token in a cookie
+  it cannot read from JavaScript, which is what makes an XSS payload unable to
+  steal it. A mobile app or a script has no cookie jar worth the name, so it may
+  send the same token as `Authorization: Bearer <token>` instead. The header
+  wins when both are present, and the request log records which one answered
+  (`auth_transport`), so "who was this and how did they prove it" is never a
+  guess. CSRF protection applies only to the cookie path — a Bearer request
+  carries no ambient credential for a third-party page to trigger.
 - Passwords hashed with **Argon2id**.
 - **Rotating** refresh tokens — each refresh revokes the old session and issues a
   new one; presenting a revoked token triggers reuse detection and revokes all
@@ -269,8 +276,8 @@ docker compose exec -e PYTHONPATH=/app api \
 
 ## Domain resources
 
-All resource routes require the auth cookie; `user_id` comes from the
-authenticated user and every query is scoped to that user.
+All resource routes require authentication (cookie or `Bearer`); `user_id`
+comes from the authenticated user and every query is scoped to that user.
 
 | Resource | Base path | Notes |
 |----------|-----------|-------|
@@ -278,29 +285,51 @@ authenticated user and every query is scoped to that user.
 | Plans | `/api/v1/plans` | Full CRUD; `subject_id` must belong to the user |
 | Modules | `/api/v1/modules` | Full CRUD; `plan_id` must belong to the user; list is filtered by `plan_id` |
 | Academic items | `/api/v1/academic-items` | Full CRUD; `module_id` must belong to the user; list filtered by `module_id`; **soft delete** |
+| Academic item figures | `/api/v1/academic-items/{id}/figures` | The figures resolved for an item; `GET .../figures/{figure_id}` streams the bytes |
+| Academic item extras | `/api/v1/academic-items/{id}/sources` · `/handout.pdf` | Which document chunks the AI used, and the item rendered as a printable handout with its figures embedded |
 | Academic item categories | `/api/v1/academic-item-categories` | Global catalog, full CRUD |
 | Academic item category types | `/api/v1/academic-item-category-types` | Global catalog, full CRUD; `academic_item_category_id` must exist; list filterable by `category_id` |
 | Documents | `/api/v1/documents` | Multipart **upload** (202) → stored in MinIO + queued for async ingestion; list (`?subject_id`), get, `GET /{id}/status` (pending/processed), soft delete |
 | RAG query | `/api/v1/rag/query` | Embed a question and retrieve the most relevant chunks (cosine), scoped to the user's documents |
 | AI | `/api/v1/ai/ask` | RAG-augmented answer: retrieves context, then generates via the LLM gateway |
 | AI providers | `/api/v1/ai/health` · `PATCH /api/v1/ai/providers/{name}` | Provider status (configured/enabled/active/circuit) and runtime enable/disable (admin) |
+| Plan generation | `POST /api/v1/plans/{id}/generate` · `GET /api/v1/generations/{id}` | Start a generation run (202) and follow it; `GET /api/v1/usage/me` reports the caller's spend |
+| Notifications | `/api/v1/notifications` | List (newest first, with the unread count), `PATCH /{id}/read`, `POST /read-all` |
+| Audit log | `/api/v1/audit-logs` | The caller's own trail; admins see everyone's |
+| Catalogs | `/api/v1/icons` · `/api/v1/colors` | Global lookup tables for the UI |
 
 ### AI generation (LLM gateway)
 
 `POST /api/v1/ai/ask` retrieves the user's most relevant chunks and asks an LLM
 to answer using that context. The **LLM gateway** tries providers in a fallback
-chain — **Claude → Bedrock → OpenAI → Gemini → Ollama (local)** — each guarded
-by a retry policy and a circuit breaker: a provider that is unavailable (no API
-key) or failing is skipped and the next one is tried. Configure keys/models via
-`ANTHROPIC_*`, `BEDROCK_*`, `OPENAI_*`, `GEMINI_*` and `OLLAMA_CHAT_MODEL` in
-`.env` (Ollama needs no key and is the final fallback).
+chain, each guarded by a retry policy and a circuit breaker: a provider that is
+unavailable (no credential) or failing is skipped and the next one is tried.
+
+Every remote model is reached **through Amazon Bedrock** — one account, one
+credential, one billing surface — but the chain still names *model families*,
+not one model, because a family going quiet is exactly what a fallback is for.
+There are two chains, one per tier, and each family carries a larger and a
+smaller model so the tier picks the size the task deserves:
+
+| Tier | Chain | Standard model | Fast model |
+|------|-------|----------------|------------|
+| `STANDARD` — writing a whole activity | `claude` → `openai` → `ollama` | `us.anthropic.claude-sonnet-5` | `us.anthropic.claude-haiku-4-5` |
+| `FAST` — short, cheap, high-volume calls | `nova` → `openai` → `ollama` | `us.amazon.nova-pro-v1:0` | `us.amazon.nova-lite-v1:0` |
+
+`openai` is the shared middle rung (`openai.gpt-oss-120b-1:0` /
+`openai.gpt-oss-20b-1:0`, also on Bedrock), and **Ollama** is the last rung of
+both: local, keyless, and the reason an outage degrades quality instead of
+returning 503. Configure the chains with `LLM_STANDARD_CHAIN` /
+`LLM_FAST_CHAIN` and the models with `BEDROCK_{CLAUDE,NOVA,OPENAI}_MODEL` and
+their `_FAST_MODEL` twins.
 
 **Bedrock** is authenticated with a Bedrock API key in a bearer header rather
 than SigV4, so it needs no boto3 and no credential chain, and it speaks the
-Converse API, which reports tokens the same way whatever model answers.
-`BEDROCK_MODEL` must be an *inference profile* id (`us.anthropic.claude-sonnet-5`);
-the bare foundation-model id answers "not available for this account", which
-reads like a permissions problem and is not one.
+Converse API, which reports tokens the same way whatever model answers — which
+is what makes one cost table cover three families. Claude and Nova ids must be
+*inference profiles* (the `us.` prefix); the bare foundation-model id answers
+"not available for this account", which reads like a permissions problem and is
+not one.
 
 Two things keep this endpoint from cascading into the rest of the API under
 load: the circuit breaker's state lives in **Redis** (`LLM_CIRCUIT_*`), not
@@ -321,6 +350,42 @@ source of truth) and every toggle is written to the audit trail. **API keys are
 deliberately NOT stored in the database** — they stay in the environment
 (12-factor); encrypting them in the DB would only move the secret problem to
 wherever the encryption key lives.
+
+### Plan generation
+
+`POST /api/v1/plans/{plan_id}/generate` answers **202** and hands the work to
+Celery: a run row in `plan_generation`, then one item at a time, so a plan that
+takes minutes never holds a request open. `GET /api/v1/generations/{id}`
+reports progress, and the run ends `COMPLETED`, `PARTIAL` (some items failed)
+or `FAILED`.
+
+The request names **how many of each kind** it wants. The kinds are stored in
+English — `content`, `reading`, `exercises`, `activity`, `lab`, `project`,
+`seminar`, `assignment`, `quiz`, `exam`, `bibliography` — and a normaliser
+accepts the Portuguese and Spanish words a client might send, because those are
+*input data*, not identifiers. Each kind is capped at **15 items** per run
+(`MAX_ITEMS_OF_A_KIND`): the ceiling exists so one request cannot buy an
+unbounded number of LLM calls, and the frontend shows the same limit rather
+than letting the API be the one to say no.
+
+#### Figures
+
+An item can ask for a picture. The prompt lets the model write
+`{{figure: mitochondrion diagram}}` inline, and after generation a resolver
+searches **Wikimedia Commons** for each query, keeps at most
+`MAX_FIGURES_PER_ITEM` (3), and rewrites the placeholder as a normal Markdown
+image pointing at our own endpoint. What it refuses matters more than what it
+finds: a candidate is dropped unless the licence permits commercial use and
+derivatives (no `nc`, no `nd`, nothing unknown), and the downloaded bytes must
+actually start with PNG or JPEG magic numbers and be large enough to be worth
+showing. Attribution rides on the stored row, not in the alt text, so a
+citation cannot be lost by editing the prose.
+
+Bytes are served from `GET /api/v1/academic-items/{id}/figures/{figure_id}` —
+immutable `Cache-Control` plus an `ETag`, since the file behind an id never
+changes — and the id is looked up in the item's own figure rows before anything
+is read, so the path is an allowlist rather than a filename the caller gets to
+choose.
 
 ### Document ingestion (RAG)
 
@@ -348,6 +413,28 @@ Academic items carry a free-form `content` (JSONB) and a structured `metadata`
 (JSONB) with the shape: `starts_at`, `ends_at`, `is_graded`, `weight`,
 `is_individual`, `estimated_duration` (plus optional `uuid` / `academic_item_id`).
 
+### Notifications
+
+Generation and ingestion both finish long after the request that started them,
+so each writes a row to `notifications` when it reaches a terminal state:
+`plan_ready`, `plan_partial`, `plan_failed`, `document_indexed`,
+`document_failed`. The row carries the entity it is about (`plan` or
+`document`) so the UI can link straight to it.
+
+Two details keep the feature honest. The notification is staged **in the
+caller's transaction** — it commits with the status change or not at all, which
+is why a plan can never be `COMPLETED` with no word about it — but the notifier
+swallows its own failures, because a notification is not worth losing a
+finished plan over. And the announcement is guarded by a *transition*, not a
+state: it fires only when the run's status actually changed into a terminal one
+this time round, so a retried or redelivered task cannot announce the same plan
+twice.
+
+Reads are cheap by design: `GET /api/v1/notifications` returns the page and the
+unread count together (one round trip for the bell and its badge), backed by an
+index on `(user_id, created_at DESC)` and a **partial** index over unread rows
+only — the badge query reads an index that holds nothing but what it counts.
+
 ### Account lifecycle (reset and verification)
 
 Both flows are the same shape: a single-use token, stored only as a SHA-256
@@ -372,10 +459,11 @@ cannot be renewed, but an **access token already issued stays valid until it
 expires** (15 minutes). That is the documented trade-off of stateless access
 tokens; closing it would mean a store lookup on every request.
 
-In development the stack ships **Mailpit** (`--profile dev`): mail is delivered
-and readable at <http://localhost:8025> instead of going anywhere real. With
-`EMAIL_ENABLED=false` the message body is written to the log instead, which is
-what CI uses. Pointing it at a real server is four environment variables and
+Locally, run with `EMAIL_ENABLED=false`: the message body, link included, is
+written to the log instead of sent. That is what CI uses, and it needs no
+provider and no verified domain. **Resend** is the only transport for real
+delivery — note that its test mode accepts nobody but your own verified address
+as a recipient, and rejects the rest with a 550. Pointing it at a real server is four environment variables and
 one command to prove it works, both in
 [`docs/deployment/EMAIL.md`](docs/deployment/EMAIL.md).
 
@@ -454,6 +542,23 @@ come back on the generation response; per call there is a line in Loki. The
 whole of it, including what a real plan measured, is in
 [`docs/observability/LLM-COST.md`](docs/observability/LLM-COST.md).
 
+## Errors
+
+Every handled failure answers with the same two fields:
+
+```json
+{ "code": "subject_not_found", "detail": "Subject not found." }
+```
+
+`detail` is an English sentence for a human reading a log or a Postman tab, and
+it may be reworded at any time. `code` is the contract: a stable snake_case
+identifier that clients switch on, which is what lets the frontend translate a
+failure into Portuguese, Spanish or English without ever parsing prose. Domain
+exceptions derive their code from their class name automatically
+(`SubjectNotFoundError` → `subject_not_found`), so a new exception cannot ship
+without one, and overriding `code` on the class is what keeps a rename from
+silently breaking a client.
+
 ## CORS & single entrypoint
 
 The architecture treats **Traefik as the single entrypoint**, so CORS is a
@@ -467,8 +572,11 @@ development-only concern:
   (`https://teacher-ai.com`, with `/api` routed to FastAPI). Same origin means
   **no CORS at all** — the middleware is not added when `APP_ENV != development`.
 
-The browser sends the HttpOnly auth cookies automatically; there is no
-`Authorization: Bearer` header and no token in `localStorage`.
+The browser sends the HttpOnly auth cookies automatically, so the React app
+holds no token in `localStorage` and sets no `Authorization` header. A
+non-browser client is the case CORS was never about: it may send
+`Authorization: Bearer <token>` instead, and a preflight it never triggers
+cannot be what protects it — the CSRF check on the cookie path is.
 
 ## Rate limiting
 

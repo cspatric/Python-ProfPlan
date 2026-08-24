@@ -60,7 +60,7 @@ async def test_deleting_needs_the_password(auth_client):
 
 async def test_deleting_removes_the_account_and_what_it_owns(auth_client, subject_id):
     response = await auth_client.post(
-        "/api/v1/users/me/delete", json={"password": "Senha@123"}
+        "/api/v1/users/me/delete", json={"password": "Str0ng@Pass1"}
     )
 
     assert response.status_code == 200
@@ -78,7 +78,7 @@ async def test_the_security_log_keeps_the_event_without_the_person(auth_client):
         before = await session.scalar(select(func.count()).select_from(AuthLog))
     assert before > 0
 
-    await auth_client.post("/api/v1/users/me/delete", json={"password": "Senha@123"})
+    await auth_client.post("/api/v1/users/me/delete", json={"password": "Str0ng@Pass1"})
 
     async with SessionFactory() as session:
         rows = (await session.scalars(select(AuthLog))).all()

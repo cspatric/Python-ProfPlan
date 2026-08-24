@@ -1,0 +1,61 @@
+flowchart TB
+
+LOCAL["`LOCAL WHERE IT ALSO MADE
+TECHNICAL SENSE
+bge-m3 runs locally on Ollama:
+no API cost, documents never leave
+the infrastructure
+embedding cache in Redis
+self-hosted observability stack
+MinIO instead of S3 in development
+Ollama as the last LLM fallback`"]
+
+NUM["`THE PILLAR HAS A NUMBER — measured
+on one real plan, the single roadmap call
+cost 84% of the money using only
+23% of the tokens
+that inversion IS the two-tier argument`"]
+
+TIERS["`SAME SUBJECT, THREE WAYS
+everything on Haiku: 0.11 USD
+Haiku decides + Nova Lite writes:
+0.0125 USD — nine times cheaper
+same plan on Sonnet: ~0.79 USD —
+sixty-plus times the two-tier cost`"]
+
+TRADE["`THE HONEST TRADE-OFF
+the cheap model writes coherent,
+structured, good-Portuguese material —
+at less than half the volume
+the fast model of each family is a
+per-deployment knob, no code change`"]
+
+LEDGER["`LEDGER + MONTHLY BUDGET
+ledger records the REAL token spend and
+the cost of every generation
+monthly budget: limit hit → new
+generations refused · checked once per
+plan, never mid-run — no half-written plans
+default 5 USD/month ≈ 400 plans
+per teacher`"]
+
+PAID["`WHERE I DID NOT SAVE
+PgBouncer · tracing
+Argon2 at proper cost · bge-m3
+even 24x slower — every one of these
+choices has a technical justification`"]
+
+LOCAL --> NUM
+NUM --> TIERS --> TRADE
+TIERS --> LEDGER
+LEDGER -.- PAID
+
+classDef local fill:#e7f6ef,stroke:#0f766e,stroke-width:3px,color:#0b1220
+classDef num fill:#fef9c3,stroke:#ca8a04,stroke-width:3px,color:#0b1220
+classDef tier fill:#fff0e6,stroke:#ea580c,stroke-width:3px,color:#0b1220
+classDef guard fill:#fde8e8,stroke:#dc2626,stroke-width:3px,color:#0b1220
+
+class LOCAL local
+class NUM,LEDGER num
+class TIERS,TRADE tier
+class PAID guard

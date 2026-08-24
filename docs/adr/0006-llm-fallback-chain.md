@@ -41,3 +41,24 @@ a minute and connections are the scarcer resource.
   the gateway and is the point at which this abstraction starts to leak.
 - **Cost becoming the binding constraint.** Routing by price per token, or by
   measured latency, is a different design from a fixed chain.
+
+## Amendment — every remote provider moved behind Bedrock
+
+The shape above is unchanged: one gateway, an ordered chain, a shared breaker, a
+local last resort. What changed is who the remote rungs talk to. Anthropic,
+OpenAI and Gemini were three vendors, three credentials, three billing
+relationships and three SDK dialects; they are now three **model families**
+reached through **Amazon Bedrock**, which speaks one Converse API and reports
+tokens the same way whatever answers.
+
+What that buys: one credential to rotate, one invoice to read, and a cost table
+that covers every remote model because they all report usage identically. What
+it costs: the chain no longer survives *Bedrock* being down — it survives a
+model family being down. Ollama at the end is what keeps that from being a
+single point of failure, and it is now carrying more of that weight than it did
+when the rungs were independent vendors.
+
+The chain is also per tier rather than global, since the tiers fail for
+different reasons: `claude → openai → ollama` for writing an activity,
+`nova → openai → ollama` for the short, high-volume calls. Each family keeps a
+larger and a smaller model so the tier chooses the size, not just the vendor.

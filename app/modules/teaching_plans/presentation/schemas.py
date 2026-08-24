@@ -18,9 +18,10 @@ MIN_CLASS_DURATION, MAX_CLASS_DURATION = 5, 600
 MIN_CLASSES_PER_WEEK, MAX_CLASSES_PER_WEEK = 1, 14
 MAX_PLAN_DAYS = 1095  # three years
 MAX_AI_INPUT = 4000
-#: Per kind, not in total. Twenty exams in one plan is already absurd; the
-#: ceiling exists so a typo cannot ask the planner for two thousand items.
-MAX_ITEMS_OF_A_KIND = 50
+#: Per kind, not in total. Fifteen is already more exams than a semester holds;
+#: the ceiling exists so a typo cannot ask the planner for two thousand items,
+#: and every item above it is a real LLM call the account pays for.
+MAX_ITEMS_OF_A_KIND = 15
 
 
 class PlanCreate(BaseModel):

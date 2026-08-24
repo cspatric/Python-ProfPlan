@@ -5,6 +5,7 @@ from typing import Annotated
 
 import jwt
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,46 @@ from app.modules.users.infrastructure.repository import UserRepository
 from app.shared.exceptions.base import ForbiddenError
 
 _settings = get_settings()
+
+# ``auto_error=False`` so a request with no header falls through to the cookie
+# instead of being rejected here. Declaring the scheme at all is what puts it
+# in the OpenAPI document, which is what gives /docs an Authorize button for
+# the clients that need one.
+_bearer_scheme = HTTPBearer(
+    auto_error=False,
+    scheme_name="Bearer",
+    description=(
+        "Access token for clients that are not a browser: mobile apps and "
+        "third-party integrations. The first-party web app authenticates with "
+        "the HttpOnly session cookie and needs nothing here."
+    ),
+)
+
+
+def _access_token(
+    request: Request, credentials: HTTPAuthorizationCredentials | None
+) -> tuple[str, str] | None:
+    """The access token and the transport it arrived on, or None.
+
+    Two transports, one provenance: either way the value is a JWT this server
+    signed, never an identifier the client chose. That is what the ownership
+    invariant rests on, and it is why adding a second transport does not touch
+    any domain code.
+
+    Which transport is *right* depends on the client, so both are accepted. A
+    browser gets the HttpOnly cookie: script cannot read it, so an XSS cannot
+    exfiltrate the session and replay it elsewhere. A mobile app or a
+    third-party integration gets the bearer header: nothing attaches that
+    header ambiently, which is also why CSRF does not apply to those requests
+    (``api/csrf.py`` keys its check off the presence of a session cookie).
+
+    An explicit header wins over an ambient cookie: a caller that went to the
+    trouble of setting a credential meant to use that one.
+    """
+    if credentials is not None:
+        return credentials.credentials, "bearer"
+    cookie = request.cookies.get(_settings.access_cookie_name)
+    return (cookie, "cookie") if cookie else None
 
 
 def get_auth_service(
@@ -62,14 +103,18 @@ def get_account_service(
 async def get_current_user(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
 ) -> User:
-    """Resolve the authenticated user from the access-token cookie."""
-    token = request.cookies.get(_settings.access_cookie_name)
-    if not token:
+    """Resolve the authenticated user from the bearer header or session cookie."""
+    found = _access_token(request, credentials)
+    if found is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
+    token, transport = found
     try:
         payload = decode_access_token(token)
         user_id = uuid.UUID(payload["sub"])
@@ -91,6 +136,9 @@ async def get_current_user(
     request.state.user_id = str(user.uuid)
     request.state.user_email = user.email
     request.state.user_role = user.role.value
+    # Which transport the credential arrived on: a spike of one or the other is
+    # how you notice a client migrating, or a token leaking out of a browser.
+    request.state.auth_transport = transport
     return user
 
 

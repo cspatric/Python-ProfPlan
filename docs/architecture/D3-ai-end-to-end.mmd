@@ -1,0 +1,156 @@
+flowchart TB
+
+INGROW["`INGESTION — the top of the diagram`"]
+
+UP["`UPLOAD — four validations before
+anything is persisted:
+extension against an allowlist
+declared MIME type · byte count
+magic bytes
+an executable never enters the system
+files are never executed`"]
+
+STORE["`MINIO
+object under a UUID key:
+subject id + extension
+original filename ignored
+cheaper than S3: no per-request,
+no egress · swap = endpoint + credential`"]
+
+INGEST["`CELERY INGEST WORKER — in order:
+fetch from MinIO → convert to Markdown
+→ header-aware chunks of ~1,000 chars
+with overlap → embed each chunk
+→ index in PostgreSQL
+only then status = indexed`"]
+
+SAFE["`BUILT TO SURVIVE CRASHES
+idempotent task · acks-late →
+at-least-once delivery
+progressive retries 15, 30, 60 s
+still failing → status failed +
+Dead Letter Queue in Redis
+no infinite retries, no stuck queues`"]
+
+VDB["`PostgreSQL + pgvector
+1,024-dim embeddings stored natively
+HNSW index · cosine distance
+what Pinecone or Qdrant would do,
+without one more system to operate`"]
+
+GWROW["`AI GATEWAY — the center`"]
+
+GW["`THE SINGLE DOOR
+no module calls a provider SDK directly —
+imposed by the architecture: providers live
+behind an interface in infrastructure
+centralizes: fallback · circuit breaker
+· concurrency limit · cost ledger`"]
+
+TSTD["`STANDARD TIER — the call that DECIDES
+roadmap, roadmap repair, the judge
+Claude claude-haiku-4-5
+→ OpenAI gpt-oss-120b
+→ Ollama llama3.2:3b`"]
+
+TFAST["`FAST TIER — bulk work over a
+decision already made (the tokens live here)
+Nova nova-lite
+→ OpenAI gpt-oss-20b
+→ Ollama llama3.2:3b
+Claude is OUT of this chain on purpose`"]
+
+BED["`AMAZON BEDROCK
+three model FAMILIES, one vendor,
+one credential — a bad key removes
+the remote half of the chain
+model variety kept, vendor variety dropped`"]
+
+CB["`CIRCUIT BREAKER — per family
+closed → 3 failures → open
+→ 30 s → half-open
+state lives in REDIS, not in memory:
+the whole fleet shares 'this provider is out'
+invariants: Ollama can never be disabled
+· at least one remote family stays active
+LLM calls never hold a DB connection`"]
+
+GENROW["`PLAN GENERATION`"]
+
+GEN["`ownership check → AI budget check
+(once per plan) → planner drafts the
+roadmap (sync, standard tier)
+⇄ roadmap reviewer criticizes — judge by AI
+code-level checks first, LLM judge only
+on a weak signal · roadmap materialized
+only when valid — no orphan rows`"]
+
+FAN["`FAN-OUT — one task per academic item
+30+ units of work, fast tier
+each retrieves its own context
+per unit: all fails or nothing fails
+invalid roadmap → nothing persisted
+item fails later → partial continue`"]
+
+PDF["`OUTPUT
+source endpoint shows exactly the passages
+the model received: ranking · document
+· title · section header
+Markdown → HTML → WeasyPrint PDF
+LaTeX for tables and charts`"]
+
+RETROW["`RETRIEVAL — the bottom of the diagram`"]
+
+EMB["`query embedded with the SAME model
+that embedded the document — bge-m3,
+multilingual, 1,024 dims, same vector
+space, same cosine distance
+~24x slower, chosen for recall quality`"]
+
+HYB["`HYBRID SEARCH — two in parallel
+vector search: understands MEANING
+lexical search: Postgres text index —
+exact terms: acronyms, codes, law numbers
+('Lei 9394' vs 'Lei 9610')`"]
+
+RRF["`RECIPROCAL RANK FUSION
+combines by POSITION, not score —
+cosine and lexical live on different
+scales, positions are comparable
+validated on real questions:
+hybrid had the best recall
+retrieved content = DATA, not instruction`"]
+
+INGROW -.- UP
+UP --> STORE --> INGEST --> VDB
+INGEST -.- SAFE
+GWROW -.- GW
+GW --> TSTD
+GW --> TFAST
+TSTD --> BED
+TFAST --> BED
+GW -.- CB
+INGEST -->|"embeddings"| GW
+GENROW -.- GEN
+GEN --> FAN --> PDF
+GEN -->|"standard tier"| GW
+FAN -->|"fast tier"| GW
+RETROW -.- EMB
+INGEST -.-|"same model, same vector space"| EMB
+EMB --> HYB --> RRF
+FAN -->|"retrieves context"| HYB
+VDB --> HYB
+
+classDef row fill:#fbfcfd,stroke:#cbd5e1,stroke-width:1px,color:#8794a5
+classDef ing fill:#e8efff,stroke:#2563eb,stroke-width:3px,color:#0b1220
+classDef llm fill:#fff0e6,stroke:#ea580c,stroke-width:3px,color:#0b1220
+classDef data fill:#e7f6ef,stroke:#0f766e,stroke-width:3px,color:#0b1220
+classDef gen fill:#f2ecff,stroke:#7c3aed,stroke-width:3px,color:#0b1220
+classDef guard fill:#fde8e8,stroke:#dc2626,stroke-width:3px,color:#0b1220
+
+class INGROW,GWROW,GENROW,RETROW row
+class UP,STORE,INGEST ing
+class GW,TSTD,TFAST,BED llm
+class VDB,EMB,HYB,RRF data
+class GEN,FAN,PDF gen
+class SAFE,CB guard

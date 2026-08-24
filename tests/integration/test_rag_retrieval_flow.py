@@ -47,7 +47,7 @@ async def test_retrieval_returns_nearest_and_scopes_to_owner() -> None:
         owner = await UserRepository(session).create(
             name="Owner",
             email="owner@test.com",
-            password_hash=hash_password("Senha@123"),
+            password_hash=hash_password("Str0ng@Pass1"),
         )
         subject = Subject(user_id=owner.uuid, name="Biology")
         session.add(subject)
@@ -85,7 +85,7 @@ async def test_retrieval_returns_nearest_and_scopes_to_owner() -> None:
         other = await UserRepository(session).create(
             name="Other",
             email="other@test.com",
-            password_hash=hash_password("Senha@123"),
+            password_hash=hash_password("Str0ng@Pass1"),
         )
 
         retrieval = RetrievalService(

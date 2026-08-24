@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.modules.academic_items.application.figure_service import FigureResolver
 from app.modules.academic_items.infrastructure.models import AcademicItem
 from app.modules.academic_items.infrastructure.source_repository import (
     AcademicItemSourceRepository,
@@ -19,6 +20,7 @@ from app.modules.ai.infrastructure.gateway.llm_gateway import LLMGateway
 from app.modules.ai.infrastructure.repository import AiProviderRepository
 from app.modules.documents.domain.exceptions import DocumentNotFoundError
 from app.modules.generation.application.planner import PlannerAgent
+from app.modules.generation.domain import figure_markup
 from app.modules.generation.domain.entities import (
     GenerationItemStatus,
     GenerationRunStatus,
@@ -45,6 +47,11 @@ from app.modules.generation.infrastructure.plan_document_repository import (
     PlanDocumentRepository,
 )
 from app.modules.generation.infrastructure.repository import GenerationRepository
+from app.modules.notifications.application.notifier import Notifier
+from app.modules.notifications.domain.entities import (
+    ENTITY_PLAN,
+    NotificationKind,
+)
 from app.modules.plan_modules.infrastructure.models import Module
 from app.modules.rag.application.retrieval_service import RetrievalService
 from app.modules.rag.domain.chunk import SearchResult
@@ -153,6 +160,12 @@ async def _retrieve_context(
     return text, chunks
 
 
+#: A run in one of these has finished; anything else is still in flight.
+_TERMINAL_RUN_STATUSES = frozenset(
+    {GenerationRunStatus.COMPLETED, GenerationRunStatus.PARTIAL}
+)
+
+
 class GenerationService:
     """Orchestrates a plan generation (planner + per-item fan-out)."""
 
@@ -168,6 +181,8 @@ class GenerationService:
         subjects: SubjectRepository,
         plan_docs: PlanDocumentRepository,
         sources: AcademicItemSourceRepository,
+        figures: FigureResolver | None = None,
+        notifier: Notifier | None = None,
     ) -> None:
         self._session = session
         self._gateway = gateway
@@ -178,6 +193,14 @@ class GenerationService:
         self._subjects = subjects
         self._plan_docs = plan_docs
         self._sources = sources
+        # Optional on purpose: an environment with no figure source configured
+        # (CI, a unit test) generates items without illustrations rather than
+        # needing a stub for something the item does not depend on.
+        self._figures = figures
+        # Optional for the same reason as the figure resolver: a unit test that
+        # exercises generation should not have to stub something the generation
+        # does not depend on.
+        self._notifier = notifier
 
     async def budget(self, user_id: UUID) -> tuple[Decimal, Decimal]:
         """(spent this month, budget) for an account, both in USD.
@@ -384,6 +407,14 @@ class GenerationService:
             return
         run.status = GenerationRunStatus.FAILED
         run.error = error[:2000]
+        if self._notifier is not None:
+            self._notifier.notify(
+                user_id=run.user_id,
+                kind=NotificationKind.PLAN_FAILED,
+                entity=ENTITY_PLAN,
+                entity_id=run.plan_id,
+                params=await self._run_subject(run),
+            )
         await self._session.commit()
 
     async def plan_existing_run(
@@ -409,10 +440,15 @@ class GenerationService:
         asked = run.input or {}
         brief = _brief(
             plan,
+            # `normalize_kind`, not `ItemKind(...)`: this reads a run's own
+            # JSONB, which may have been written before the kind values were
+            # English. A strict constructor would raise on those and take the
+            # whole run down over a label.
             item_counts={
-                ItemKind(kind): n for kind, n in (asked.get("counts") or {}).items()
+                normalize_kind(kind): n
+                for kind, n in (asked.get("counts") or {}).items()
             },
-            item_kinds=[ItemKind(kind) for kind in (asked.get("kinds") or [])],
+            item_kinds=[normalize_kind(kind) for kind in (asked.get("kinds") or [])],
         )
         # Everything the planner spends, including a repair attempt and the
         # judge, belongs to this run. The scope is opened here rather than
@@ -581,7 +617,22 @@ class GenerationService:
                 tier=Tier.FAST,
             )
 
-        item.content = {"markdown": result.text, "provider": result.provider}
+        # The generator asked for its illustrations by describing them; this is
+        # where the descriptions become stored, credited images. Best effort:
+        # unresolved requests are stripped, so the placeholder syntax never
+        # reaches a student, with or without a resolver configured.
+        markdown = result.text
+        if self._figures is not None:
+            markdown = await self._figures.resolve(
+                markdown=markdown,
+                item_id=item.uuid,
+                user_id=item.user_id,
+                subject_id=subject_id,
+            )
+        else:
+            markdown = figure_markup.replace(markdown, {})
+
+        item.content = {"markdown": markdown, "provider": result.provider}
         item.generation_status = GenerationItemStatus.COMPLETED
         # What it was written from, recorded next to what was written. An
         # activity with no sources is not an error, it means the teacher
@@ -612,10 +663,67 @@ class GenerationService:
         in_flight = counts.get(GenerationItemStatus.PENDING, 0) + counts.get(
             GenerationItemStatus.PROCESSING, 0
         )
+        was = run.status
         if in_flight:
             run.status = GenerationRunStatus.RUNNING
         elif counts.get(GenerationItemStatus.FAILED, 0):
             run.status = GenerationRunStatus.PARTIAL
         else:
             run.status = GenerationRunStatus.COMPLETED
+
+        # On the transition, not on every call. This runs once per finished
+        # item, and only the last one moves the run out of RUNNING — without
+        # this guard a forty-item plan would send forty notifications.
+        if run.status is not was and run.status in _TERMINAL_RUN_STATUSES:
+            await self._announce_run(
+                run, failed=counts.get(GenerationItemStatus.FAILED, 0)
+            )
+
         await self._session.commit()
+
+    async def _run_subject(self, run: PlanGeneration) -> dict[str, object]:
+        """The subject a run belongs to, as notification parameters.
+
+        Both the name and the id: the name is what a person reads, and the id is
+        what makes the alert clickable, because a plan's page is nested under its
+        subject (`/subjects/{id}/plans/{planId}`) and the plan id alone does not
+        address it.
+
+        Named apart from `_subject_name` above, which takes ids and is used while
+        building a plan: same question, different starting point, and one method
+        serving both would leave two of its three arguments unused half the time.
+        """
+        plan = await self._plans.get_for_processing(run.plan_id)
+        if plan is None:
+            return {}
+        subject = await self._subjects.get_by_id(plan.subject_id, run.user_id)
+        if subject is None:
+            return {}
+        return {"subject_name": subject.name, "subject_id": subject.uuid}
+
+    async def _announce_run(self, run: PlanGeneration, *, failed: int) -> None:
+        """Tell the teacher their plan is ready, or ready-with-gaps.
+
+        Staged in the same transaction as the status it reports, so a crash
+        cannot leave a finished plan nobody was told about — or an alert about
+        work that was rolled back.
+        """
+        if self._notifier is None:
+            return
+        # A plan has no title of its own: it is identified by its subject and
+        # its period, which is also how the interface labels it. The subject's
+        # name is what a person recognises in an alert.
+        params: dict[str, object] = dict(await self._run_subject(run))
+        if run.status is GenerationRunStatus.PARTIAL:
+            params["failed"] = failed
+        self._notifier.notify(
+            user_id=run.user_id,
+            kind=(
+                NotificationKind.PLAN_READY
+                if run.status is GenerationRunStatus.COMPLETED
+                else NotificationKind.PLAN_PARTIAL
+            ),
+            entity=ENTITY_PLAN,
+            entity_id=run.plan_id,
+            params=params,
+        )

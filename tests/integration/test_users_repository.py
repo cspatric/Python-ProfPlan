@@ -18,7 +18,7 @@ async def test_create_get_and_case_insensitive_email() -> None:
         created = await repo.create(
             name="Ada",
             email="Ada@Test.com",
-            password_hash=hash_password("Senha@123"),
+            password_hash=hash_password("Str0ng@Pass1"),
         )
         await session.commit()
 
@@ -41,7 +41,7 @@ async def test_soft_deleted_user_is_hidden() -> None:
         user = await repo.create(
             name="Gone",
             email="gone@test.com",
-            password_hash=hash_password("Senha@123"),
+            password_hash=hash_password("Str0ng@Pass1"),
         )
         user.deleted_at = datetime.now(UTC)
         await session.commit()
@@ -56,7 +56,7 @@ async def test_mark_logged_in_sets_timestamp() -> None:
         user = await repo.create(
             name="Login",
             email="login@test.com",
-            password_hash=hash_password("Senha@123"),
+            password_hash=hash_password("Str0ng@Pass1"),
         )
         await session.commit()
         assert user.last_login_at is None
@@ -73,7 +73,7 @@ async def test_create_admin_role() -> None:
         admin = await repo.create(
             name="Root",
             email="root@test.com",
-            password_hash=hash_password("Senha@123"),
+            password_hash=hash_password("Str0ng@Pass1"),
             role=UserRole.ADMIN,
         )
         await session.commit()

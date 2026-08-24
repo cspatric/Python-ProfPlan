@@ -19,7 +19,7 @@ class FakeProvider:
         *,
         text: str | None = None,
         error: Exception | None = None,
-        model: str = "claude-sonnet-5",
+        model: str = "us.anthropic.claude-sonnet-5",
         fast_model: str = "",
         usage: TokenUsage | None = None,
     ) -> None:
@@ -83,19 +83,21 @@ def _gateway(*providers: FakeProvider) -> LLMGateway:
 
 async def test_uses_first_available_provider() -> None:
     claude = FakeProvider("claude", text="from claude")
-    openai = FakeProvider("openai", text="from openai")
-    gateway = _gateway(claude, openai)
+    ollama = FakeProvider("ollama", text="from ollama")
+    gateway = _gateway(claude, ollama)
 
     result = await gateway.generate("hi")
 
     assert result.provider == "claude"
     assert result.text == "from claude"
-    assert openai.calls == 0
+    assert ollama.calls == 0
 
 
-async def test_falls_back_to_openai_then_ollama() -> None:
+async def test_falls_back_across_families_then_to_ollama() -> None:
+    """The chain runs across model families before it reaches the local floor:
+    Claude, then OpenAI, then Ollama. All but the last are Bedrock."""
     claude = FakeProvider("claude", error=ProviderUnavailableError("no key"))
-    openai = FakeProvider("openai", error=RuntimeError("500"))
+    openai = FakeProvider("openai", error=RuntimeError("throttled"))
     ollama = FakeProvider("ollama", text="local answer")
     gateway = _gateway(claude, openai, ollama)
 
@@ -145,16 +147,16 @@ async def test_the_result_carries_the_model_the_tokens_and_the_cost():
     provider = FakeProvider(
         "claude",
         text="ok",
-        model="claude-sonnet-5-20260114",
+        model="us.anthropic.claude-sonnet-5",
         usage=TokenUsage(input_tokens=1000, output_tokens=500),
     )
 
     result = await _gateway(provider).generate("hi")
 
-    assert result.model == "claude-sonnet-5-20260114"
+    assert result.model == "us.anthropic.claude-sonnet-5"
     assert result.usage.total == 1500
-    # 1000 * 3/1M + 500 * 15/1M
-    assert result.cost_usd == 0.0105
+    # 1000 * 2.20/1M + 500 * 11.00/1M
+    assert result.cost_usd == 0.0077
     assert result.latency_seconds > 0
 
 
@@ -167,7 +169,7 @@ async def test_the_cost_lands_in_the_ledger_in_scope():
 
     assert ledger.calls == 2
     assert ledger.input_tokens == 2000
-    assert round(ledger.cost_usd, 6) == 0.021
+    assert round(ledger.cost_usd, 6) == 0.0154
 
 
 async def test_an_unpriced_model_still_reports_its_tokens():
@@ -213,25 +215,27 @@ def _tiered(*providers: FakeProvider, standard: tuple[str, ...], fast: tuple[str
 
 
 async def test_each_tier_goes_to_its_own_chain_first():
-    """The whole point: the roadmap is decided by one provider and the
-    activities are drafted by another, without either being a fallback."""
-    expensive = FakeProvider("claude", text="roadmap")
-    cheap = FakeProvider("gemini", text="activity")
+    """The whole point: the roadmap is decided by Claude and the activities are
+    drafted by Nova, without either being a fallback from the other. Claude is
+    not in the fast chain at all."""
+    claude = FakeProvider("claude", text="roadmap")
+    nova = FakeProvider("nova", text="activity")
     gateway = _tiered(
-        expensive, cheap, standard=("claude", "gemini"), fast=("gemini", "claude")
+        claude, nova, standard=("claude", "openai"), fast=("nova", "openai")
     )
 
     standard = await gateway.generate("plan this")
     fast = await gateway.generate("write this", tier=Tier.FAST)
 
     assert standard.provider == "claude"
-    assert fast.provider == "gemini"
+    assert fast.provider == "nova"
+    assert claude.calls == 1  # never asked to draft an activity
 
 
 async def test_a_tier_still_falls_back_within_its_own_chain():
-    failing = FakeProvider("gemini", error=ProviderUnavailableError("no key"))
+    failing = FakeProvider("nova", error=ProviderUnavailableError("no key"))
     working = FakeProvider("ollama", text="ok")
-    gateway = _tiered(failing, working, standard=("gemini",), fast=("gemini", "ollama"))
+    gateway = _tiered(failing, working, standard=("nova",), fast=("nova", "ollama"))
 
     result = await gateway.generate("write this", tier=Tier.FAST)
 
@@ -239,9 +243,10 @@ async def test_a_tier_still_falls_back_within_its_own_chain():
 
 
 async def test_the_tier_reaches_the_provider():
-    """Because a provider's cheap model is chosen there, not here."""
-    provider = FakeProvider("gemini", text="ok", model="big", fast_model="small")
-    gateway = _tiered(provider, standard=("gemini",), fast=("gemini",))
+    """Because a family's cheap model is chosen there, not here: the chain
+    picks the family, the tier picks the size within it."""
+    provider = FakeProvider("claude", text="ok", model="big", fast_model="small")
+    gateway = _tiered(provider, standard=("claude",), fast=("claude",))
 
     assert (await gateway.generate("x")).model == "big"
     assert (await gateway.generate("x", tier=Tier.FAST)).model == "small"
@@ -252,8 +257,8 @@ async def test_a_provider_missing_from_a_chain_is_not_used_for_that_tier():
     """A cheap chain that reaches an expensive provider by accident is the
     failure this exists to prevent."""
     expensive = FakeProvider("claude", text="expensive")
-    cheap = FakeProvider("gemini", error=ProviderUnavailableError("down"))
-    gateway = _tiered(cheap, expensive, standard=("claude",), fast=("gemini",))
+    cheap = FakeProvider("nova", error=ProviderUnavailableError("down"))
+    gateway = _tiered(cheap, expensive, standard=("claude",), fast=("nova",))
 
     with pytest.raises(AllProvidersFailedError):
         await gateway.generate("write this", tier=Tier.FAST)
@@ -262,7 +267,7 @@ async def test_a_provider_missing_from_a_chain_is_not_used_for_that_tier():
 
 async def test_an_unknown_name_in_a_chain_is_ignored_rather_than_fatal():
     """A typo in one chain must not take the gateway down."""
-    provider = FakeProvider("gemini", text="ok")
-    gateway = _tiered(provider, standard=("gemini",), fast=("gemnini", "gemini"))
+    provider = FakeProvider("nova", text="ok")
+    gateway = _tiered(provider, standard=("nova",), fast=("novva", "nova"))
 
-    assert (await gateway.generate("x", tier=Tier.FAST)).provider == "gemini"
+    assert (await gateway.generate("x", tier=Tier.FAST)).provider == "nova"

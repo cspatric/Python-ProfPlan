@@ -138,11 +138,29 @@ def build_repair_prompt(
     )
 
 
+#: How the generator asks for an illustration.
+#:
+#: It describes the figure it wants and never writes a URL, because a model
+#: asked for an image address invents one. A separate step resolves the
+#: description into a real, licensed image (see academic_items' FigureResolver)
+#: and removes any request it could not fill.
+FIGURE_RULE = (
+    "When a figure would genuinely help a student — a labelled diagram, a "
+    "cycle, a structure, a chart — request one by writing "
+    "{{figure: <description of the image>}} on a line of its own. Describe what "
+    "must be visible, in English, naming the parts that have to be labelled "
+    "(for example: {{figure: labelled diagram of a neuron showing axon, "
+    "dendrites and soma}}). Never write an image URL, a file name or a link: "
+    "the description is resolved into a real licensed image for you, and a "
+    "request that cannot be filled is simply dropped. At most 3 per item, and "
+    "none at all when the item is a reading list or a bibliography."
+)
+
 GENERATOR_SYSTEM = (
     "You are a teaching-content generator. You produce a single academic item "
     "(content, activity, assessment or bibliography) for a teaching plan, ready "
     "to use, grounded in the provided context when relevant. "
-    "Return well-structured Markdown. " + CONTEXT_SAFETY_RULE
+    "Return well-structured Markdown. " + FIGURE_RULE + " " + CONTEXT_SAFETY_RULE
 )
 
 

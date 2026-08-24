@@ -1,5 +1,6 @@
 """Unit tests for the Redis-backed embedding cache."""
 
+from collections.abc import Sequence
 from typing import Any
 
 from app.modules.rag.domain.interfaces import EmbedProgress
@@ -9,12 +10,22 @@ from app.modules.rag.infrastructure.embedding.cache import CachedEmbedding
 class FakeCache:
     def __init__(self) -> None:
         self.store: dict[str, Any] = {}
+        #: How many bulk writes were issued, so a test can assert that a batch
+        #: is one call rather than one per key.
+        self.write_calls = 0
 
     async def mget_json(self, keys: list[str]) -> list[Any | None]:
         return [self.store.get(k) for k in keys]
 
     async def set_json(self, key: str, value: Any, ttl: int | None = None) -> None:
         self.store[key] = value
+
+    async def set_many_json(
+        self, items: Sequence[tuple[str, Any]], ttl: int | None = None
+    ) -> None:
+        self.write_calls += 1
+        for key, value in items:
+            self.store[key] = value
 
 
 class CountingEmbedder:

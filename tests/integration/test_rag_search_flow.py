@@ -37,7 +37,7 @@ async def test_index_and_vector_search_returns_nearest_chunk() -> None:
         user = await UserRepository(session).create(
             name="RAG",
             email="rag@test.com",
-            password_hash=hash_password("Senha@123"),
+            password_hash=hash_password("Str0ng@Pass1"),
         )
         subject = Subject(user_id=user.uuid, name="Biology")
         session.add(subject)
@@ -89,7 +89,7 @@ async def test_search_can_be_scoped_to_content_ids() -> None:
         user = await UserRepository(session).create(
             name="RAG2",
             email="rag2@test.com",
-            password_hash=hash_password("Senha@123"),
+            password_hash=hash_password("Str0ng@Pass1"),
         )
         subject = Subject(user_id=user.uuid, name="Chemistry")
         session.add(subject)

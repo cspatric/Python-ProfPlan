@@ -71,6 +71,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 "user_id": getattr(request.state, "user_id", None),
                 "user_email": getattr(request.state, "user_email", None),
                 "user_role": getattr(request.state, "user_role", None),
+                "auth_transport": getattr(request.state, "auth_transport", None),
             }
             span_context = trace.get_current_span().get_span_context()
             if span_context.is_valid:

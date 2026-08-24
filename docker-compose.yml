@@ -152,32 +152,6 @@ services:
     logging: *default-logging
 
   # -------------------------------------------------------------------------
-  # Mailpit — a mail server that catches everything and delivers nothing.
-  #
-  # Account emails (password reset, address verification) are only useful in
-  # development if you can read the link. Mailpit accepts SMTP on 1025 and
-  # shows the message in a web UI on 8025. dev profile only: production points
-  # SMTP_HOST at a real provider.
-  # -------------------------------------------------------------------------
-  mailpit:
-    image: axllent/mailpit:v1.21
-    profiles: ["dev"]
-    restart: unless-stopped
-    environment:
-      MP_SMTP_AUTH_ACCEPT_ANY: "true"
-      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
-    networks:
-      - backend
-    ports:
-      - "8025:8025"
-    healthcheck:
-      test: ["CMD", "/mailpit", "readyz"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-    logging: *default-logging
-
-  # -------------------------------------------------------------------------
   # PgBouncer — connection pooler in front of Postgres.
   #
   # Why it exists: every uvicorn worker brings its own SQLAlchemy pool, so
@@ -209,11 +183,24 @@ services:
       AUTH_TYPE: scram-sha-256
       # Clients it will accept, versus server connections it will open. The
       # gap between these two numbers is the entire point of the component.
-      MAX_CLIENT_CONN: "1000"
-      DEFAULT_POOL_SIZE: "25"
-      MIN_POOL_SIZE: "5"
-      RESERVE_POOL_SIZE: "5"
+      # Every value defaults to what it was before, so this is configuration
+      # made reachable rather than behaviour changed: pointing at a bigger
+      # database is now .env, not a compose edit.
+      MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-1000}
+      DEFAULT_POOL_SIZE: ${PGBOUNCER_DEFAULT_POOL_SIZE:-25}
+      MIN_POOL_SIZE: ${PGBOUNCER_MIN_POOL_SIZE:-5}
+      RESERVE_POOL_SIZE: ${PGBOUNCER_RESERVE_POOL_SIZE:-5}
       RESERVE_POOL_TIMEOUT: "3"
+      # The ceiling on server connections across ALL pools. Without it, the
+      # count is an emergent property of how many (user, database) pairs
+      # happen to exist, and nothing protects Postgres' max_connections.
+      MAX_DB_CONNECTIONS: ${PGBOUNCER_MAX_DB_CONNECTIONS:-40}
+      # How long a client may wait for a server connection before PgBouncer
+      # gives up on it. The default is 120s, which is indistinguishable from a
+      # hang: the client already holds its TCP connection, so the app's own
+      # pool_timeout never fires and no 503 is ever returned. Five seconds
+      # turns saturation into a fast, visible error instead of a stall.
+      QUERY_WAIT_TIMEOUT: ${PGBOUNCER_QUERY_WAIT_TIMEOUT:-5}
       # Needed for SHOW commands and for the healthcheck below.
       ADMIN_USERS: ${POSTGRES_USER}
       STATS_USERS: ${POSTGRES_USER}

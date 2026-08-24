@@ -9,6 +9,7 @@ both bodies, the text body exists, and a name cannot break the markup.
 import pytest
 
 from app.modules.auth.domain.emails import (
+    BRAND,
     email_verification_email,
     password_reset_email,
 )
@@ -61,7 +62,7 @@ def test_the_styles_are_inline_and_the_colours_are_hex(render):
 
     assert "<style" not in email.html
     assert "oklch" not in email.html
-    assert "#055cb2" in email.html
+    assert BRAND in email.html
 
 
 @pytest.mark.parametrize("render", CASES)

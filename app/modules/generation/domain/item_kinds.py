@@ -9,9 +9,12 @@ Keeping it in one enum is what makes the last of those possible. A teacher can
 only pick from a list that exists, and "how many exams" only means something if
 an exam is a defined thing rather than a word the model happened to write.
 
-The values are Portuguese because the planner has always emitted them in
-Portuguese and the stored metadata of existing plans uses them; changing the
-strings would orphan every item already generated.
+The values are English, like everything else in this codebase. They used to be
+Portuguese, because that is what the planner emitted and what the stored
+metadata of existing plans held — see the migration that rewrote both. Nothing
+is orphaned by the change: reading a kind goes through `normalize_kind`, and the
+old Portuguese words are in the alias table below, which is where words the
+model writes belong.
 """
 
 from enum import StrEnum
@@ -20,17 +23,17 @@ from enum import StrEnum
 class ItemKind(StrEnum):
     """What a planned item is."""
 
-    CONTENT = "conteudo"
-    READING = "leitura"
-    EXERCISES = "exercicios"
-    ACTIVITY = "atividade"
-    LAB = "laboratorio"
-    PROJECT = "projeto"
-    SEMINAR = "seminario"
-    ASSIGNMENT = "trabalho"
+    CONTENT = "content"
+    READING = "reading"
+    EXERCISES = "exercises"
+    ACTIVITY = "activity"
+    LAB = "lab"
+    PROJECT = "project"
+    SEMINAR = "seminar"
+    ASSIGNMENT = "assignment"
     QUIZ = "quiz"
-    EXAM = "prova"
-    BIBLIOGRAPHY = "bibliografia"
+    EXAM = "exam"
+    BIBLIOGRAPHY = "bibliography"
 
 
 #: Kinds that produce a mark. Everything else is material to teach or read, and
@@ -45,43 +48,53 @@ GRADED_KINDS = frozenset(
     }
 )
 
-#: Words the model reaches for that mean one of ours. The planner writes in the
-#: teacher's language, so an English or Spanish plan comes back with English or
-#: Spanish kinds; without this they would all collapse to the fallback.
+#: Words the model reaches for that mean one of ours.
+#:
+#: This table is *input data*, not code in another language, and the difference
+#: is worth stating because it looks the same in a grep. The planner writes in
+#: the teacher's language, so a Portuguese plan comes back with Portuguese kinds
+#: and a Spanish one with Spanish; without this they would all collapse to the
+#: fallback. The Portuguese entries also cover every row written before the
+#: values here were English, so a plan generated then still reads correctly.
 _ALIASES = {
-    "content": ItemKind.CONTENT,
-    "lesson": ItemKind.CONTENT,
+    # Portuguese
+    "conteudo": ItemKind.CONTENT,
     "aula": ItemKind.CONTENT,
     "teoria": ItemKind.CONTENT,
-    "reading": ItemKind.READING,
-    "lectura": ItemKind.READING,
-    "exercise": ItemKind.EXERCISES,
-    "exercises": ItemKind.EXERCISES,
+    "leitura": ItemKind.READING,
+    "exercicios": ItemKind.EXERCISES,
     "exercicio": ItemKind.EXERCISES,
     "lista": ItemKind.EXERCISES,
-    "activity": ItemKind.ACTIVITY,
-    "actividad": ItemKind.ACTIVITY,
+    "atividade": ItemKind.ACTIVITY,
     "pratica": ItemKind.ACTIVITY,
-    "lab": ItemKind.LAB,
-    "laboratory": ItemKind.LAB,
     "laboratorio": ItemKind.LAB,
-    "project": ItemKind.PROJECT,
-    "proyecto": ItemKind.PROJECT,
-    "seminar": ItemKind.SEMINAR,
+    "projeto": ItemKind.PROJECT,
+    "seminario": ItemKind.SEMINAR,
     "apresentacao": ItemKind.SEMINAR,
-    "presentation": ItemKind.SEMINAR,
-    "assignment": ItemKind.ASSIGNMENT,
-    "homework": ItemKind.ASSIGNMENT,
-    "tarea": ItemKind.ASSIGNMENT,
-    "test": ItemKind.QUIZ,
-    "quiz": ItemKind.QUIZ,
-    "exam": ItemKind.EXAM,
-    "prueba": ItemKind.EXAM,
+    "trabalho": ItemKind.ASSIGNMENT,
+    "prova": ItemKind.EXAM,
     "avaliacao": ItemKind.EXAM,
-    "examination": ItemKind.EXAM,
-    "bibliography": ItemKind.BIBLIOGRAPHY,
+    "bibliografia": ItemKind.BIBLIOGRAPHY,
     "referencias": ItemKind.BIBLIOGRAPHY,
-    "references": ItemKind.BIBLIOGRAPHY,
+    # Spanish
+    "contenido": ItemKind.CONTENT,
+    "lectura": ItemKind.READING,
+    "ejercicios": ItemKind.EXERCISES,
+    "actividad": ItemKind.ACTIVITY,
+    "proyecto": ItemKind.PROJECT,
+    "tarea": ItemKind.ASSIGNMENT,
+    "prueba": ItemKind.EXAM,
+    "examen": ItemKind.EXAM,
+    # "seminario" and "bibliografia" are spelled the same in both languages and
+    # are already above; a second entry would only be a duplicate key.
+    # English words the model uses that are not the enum value itself
+    "lesson": ItemKind.CONTENT,
+    "exercise": ItemKind.EXERCISES,
+    "laboratory": ItemKind.LAB,
+    "presentation": ItemKind.SEMINAR,
+    "homework": ItemKind.ASSIGNMENT,
+    "test": ItemKind.QUIZ,
+    "examination": ItemKind.EXAM,
 }
 
 
@@ -101,7 +114,7 @@ def normalize_kind(raw: str | None) -> ItemKind:
             return kind
     if text in _ALIASES:
         return _ALIASES[text]
-    # Substring last: "prova escrita" and "atividade pratica" are common.
+    # Substring last: "prova escrita" and "written exam" are both common.
     for word, kind in _ALIASES.items():
         if word in text:
             return kind

@@ -85,7 +85,7 @@ async def test_creating_a_plan_returns_before_the_planner_runs(
             "class_duration": 50,
             "class_per_week": 2,
             "exam_count": 2,
-            "item_kinds": ["conteudo", "prova"],
+            "item_kinds": ["content", "exam"],
         },
     )
 

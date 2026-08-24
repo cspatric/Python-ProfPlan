@@ -15,6 +15,11 @@ from app.modules.documents.infrastructure.repository import (
     DocumentContentRepository,
     DocumentRepository,
 )
+from app.modules.notifications.application.notifier import Notifier
+from app.modules.notifications.domain.entities import (
+    ENTITY_DOCUMENT,
+    NotificationKind,
+)
 from app.modules.rag.application.indexing_service import IndexingService
 from app.modules.rag.domain.chunk import ChunkInput
 from app.modules.rag.domain.exceptions import (
@@ -26,6 +31,7 @@ from app.modules.rag.infrastructure.chunking.chunker import chunk_markdown
 from app.modules.rag.infrastructure.parser.document_parser import (
     parse_to_markdown,
 )
+from app.modules.subjects.infrastructure.repository import SubjectRepository
 
 #: How long a document may sit in PROCESSING before another run may take it
 #: over. Long enough that a slow but living ingestion is never interrupted (a
@@ -54,6 +60,8 @@ class IngestionService:
         documents: DocumentRepository,
         contents: DocumentContentRepository,
         indexing: IndexingService,
+        subjects: SubjectRepository | None = None,
+        notifier: Notifier | None = None,
     ) -> None:
         self._session = session
         self._storage = storage
@@ -61,6 +69,11 @@ class IngestionService:
         self._documents = documents
         self._contents = contents
         self._indexing = indexing
+        # Both optional, and both only needed to tell someone the work is done.
+        # A test that exercises ingestion should not have to stub the way the
+        # result is announced.
+        self._subjects = subjects
+        self._notifier = notifier
 
     async def ingest(self, document_id: UUID) -> DocumentContent | None:
         """Run the full ingestion pipeline for a stored document.
@@ -100,8 +113,42 @@ class IngestionService:
             await self._documents.set_ingestion_status(
                 document_id, IngestionStatus.FAILED, error=str(exc)[:2000]
             )
+            await self._announce(document_id, NotificationKind.DOCUMENT_FAILED)
             await self._session.commit()
             raise
+
+    async def _announce(self, document_id: UUID, kind: NotificationKind) -> None:
+        """Tell the document's owner how the ingestion ended.
+
+        The owner is reached through the subject, because a document has no
+        owner column of its own — it belongs to a subject, and the subject
+        belongs to a teacher.
+
+        Staged in the same transaction as the status it reports, so the two are
+        persisted together: a document that says INDEXED and no notification, or
+        the reverse, are both states somebody would have to explain.
+        """
+        if self._notifier is None or self._subjects is None:
+            return
+        document = await self._documents.get_for_processing(document_id)
+        if document is None:
+            return
+        subject = await self._subjects.get_for_processing(document.subject_id)
+        if subject is None:
+            return
+        self._notifier.notify(
+            user_id=subject.user_id,
+            kind=kind,
+            entity=ENTITY_DOCUMENT,
+            entity_id=document_id,
+            params={
+                "document_title": document.title,
+                "subject_name": subject.name,
+                # The id too: a document has no page of its own, so the alert
+                # links to the subject that holds it.
+                "subject_id": subject.uuid,
+            },
+        )
 
     async def _ingest(
         self, document_id: UUID, document_path: str
@@ -179,5 +226,6 @@ class IngestionService:
 
         # Chunks are in pgvector: only now is the document truly searchable.
         await self._documents.set_ingestion_status(document_id, IngestionStatus.INDEXED)
+        await self._announce(document_id, NotificationKind.DOCUMENT_INDEXED)
         await self._session.commit()
         return content

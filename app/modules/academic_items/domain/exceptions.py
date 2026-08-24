@@ -23,3 +23,12 @@ class InvalidModuleError(UnprocessableError):
     """Raised when the referenced module does not belong to the user."""
 
     detail = "Module not found or not owned by the user"
+
+
+class UnusableFigureError(UnprocessableError):
+    """Raised when a candidate figure cannot be trusted or cannot be shown.
+
+    Never surfaced to a teacher as an error: figure resolution is best-effort,
+    so the caller catches this, records nothing, and the item simply has one
+    fewer illustration. It exists so the reason is logged rather than guessed.
+    """

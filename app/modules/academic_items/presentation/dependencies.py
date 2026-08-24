@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database.session import get_session
 from app.modules.academic_items.application.service import AcademicItemService
+from app.modules.academic_items.infrastructure.figure_repository import (
+    AcademicItemFigureRepository,
+)
 from app.modules.academic_items.infrastructure.repository import (
     AcademicItemRepository,
 )
@@ -25,6 +28,7 @@ def get_academic_item_service(
         AcademicItemRepository(session),
         ModuleRepository(session),
         AcademicItemSourceRepository(session),
+        AcademicItemFigureRepository(session),
     )
 
 

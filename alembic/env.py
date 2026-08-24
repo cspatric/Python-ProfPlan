@@ -30,6 +30,9 @@ from app.modules.documents.infrastructure import (  # noqa: F401
 from app.modules.generation.infrastructure import (  # noqa: F401
     models as generation_models,
 )
+from app.modules.notifications.infrastructure import (  # noqa: F401
+    models as notification_models,
+)
 from app.modules.plan_modules.infrastructure import (  # noqa: F401
     models as module_models,
 )

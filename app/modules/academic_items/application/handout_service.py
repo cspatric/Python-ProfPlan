@@ -18,7 +18,9 @@ stripped and the expression is set in italics, so ``$x_{i,j}$`` reads as
 *x_{i,j}* rather than as stray dollar signs.
 """
 
+import base64
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
@@ -47,6 +49,13 @@ body {
     line-height: 1.55;
     color: #262f3d;
 }
+
+/* Figures. `page-break-inside: avoid` is the point: a diagram split across
+   two pages is a diagram nobody can read, and this is a print medium. */
+figure { margin: 14pt 0; text-align: center; page-break-inside: avoid; }
+figure img { max-width: 100%; max-height: 11cm; }
+figcaption { font-size: 7.5pt; color: #667085; margin-top: 4pt;
+             text-align: center; }
 
 /* Cover block: what the activity is, before what it says. */
 .masthead { border-bottom: 2px solid #1e4fa3; padding-bottom: 12pt;
@@ -155,12 +164,59 @@ def _masthead(context: HandoutContext) -> str:
     )
 
 
-def render_handout_html(context: HandoutContext) -> str:
+#: The image paragraph the resolver wrote into the item's Markdown. The credit
+#: line is not in the Markdown: it comes off the figure's row, through `load`,
+#: so the printed handout and the web view cannot disagree about it.
+_FIGURE_BLOCK = re.compile(
+    r'<p><img alt="(?P<alt>[^"]*)" src="(?P<src>[^"]+)"\s*/?></p>'
+)
+
+
+def _figures_to_html(
+    body: str, load: Callable[[str], tuple[bytes, str, str | None]] | None
+) -> str:
+    """Turn the resolver's image references into embedded `<figure>` blocks.
+
+    The bytes are inlined as a data URI rather than linked. Two reasons, and
+    both matter for a document a teacher prints: the PDF stays self-contained,
+    and it stays *reproducible* — a handout reprinted next semester shows the
+    same diagram instead of whatever that URL serves by then.
+
+    An image that cannot be loaded is dropped along with its caption. A credit
+    line under a missing picture is worse than no picture.
+    """
+
+    def _swap(match: re.Match[str]) -> str:
+        src = match.group("src")
+        if load is None or src.startswith(("http://", "https://", "data:")):
+            # Remote sources are deliberately not fetched at render time: that
+            # is an SSRF surface and a dependency on someone else's uptime.
+            return ""
+        try:
+            data, mime, caption = load(src)
+        except Exception:  # noqa: BLE001 - a missing figure is not a failed PDF
+            return ""
+        encoded = base64.b64encode(data).decode("ascii")
+        caption_html = f"<figcaption>{_escape(caption)}</figcaption>" if caption else ""
+        return (
+            f'<figure><img alt="{match.group("alt")}" '
+            f'src="data:{mime};base64,{encoded}">{caption_html}</figure>'
+        )
+
+    return _FIGURE_BLOCK.sub(_swap, body)
+
+
+def render_handout_html(
+    context: HandoutContext,
+    *,
+    load_figure: Callable[[str], tuple[bytes, str, str | None]] | None = None,
+) -> str:
     """The full HTML document, kept separate so it can be asserted on."""
     body = markdown_lib.markdown(
         _mark_math(context.body),
         extensions=["tables", "fenced_code", "sane_lists", "attr_list"],
     )
+    body = _figures_to_html(body, load_figure)
     return (
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
         f"<title>{_escape(context.title)}</title>"
@@ -173,7 +229,11 @@ def render_handout_html(context: HandoutContext) -> str:
     )
 
 
-def render_handout_pdf(context: HandoutContext) -> bytes:
+def render_handout_pdf(
+    context: HandoutContext,
+    *,
+    load_figure: Callable[[str], tuple[bytes, str, str | None]] | None = None,
+) -> bytes:
     """The activity as an A4 PDF, ready to be printed or handed out."""
     # Imported here, not at module load: WeasyPrint opens pango and cairo
     # through cffi the moment it is imported, so a top-level import makes
@@ -182,7 +242,9 @@ def render_handout_pdf(context: HandoutContext) -> bytes:
     # feature it never uses.
     from weasyprint import HTML
 
-    return HTML(string=render_handout_html(context)).write_pdf()
+    return HTML(
+        string=render_handout_html(context, load_figure=load_figure)
+    ).write_pdf()
 
 
 def handout_filename(title: str) -> str:

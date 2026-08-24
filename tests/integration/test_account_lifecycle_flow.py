@@ -6,8 +6,8 @@ the reset really ends the session, and that the endpoints answer the way the
 API contract says they do.
 
 Email delivery is monkeypatched at the queue boundary. Asserting that Celery
-received the right message is the useful part; SMTP itself is Mailpit's job in
-development and the provider's in production.
+received the right message is the useful part; SMTP itself is the provider's
+job, and locally there is no SMTP at all — the message goes to the log.
 """
 
 import re
@@ -54,7 +54,8 @@ def outbox(monkeypatch) -> _Outbox:
 
 async def _register(client, outbox, email: str = "reset@test.com"):
     resp = await client.post(
-        REGISTER, json={"name": "Reset User", "email": email, "password": "Senha@123"}
+        REGISTER,
+        json={"name": "Reset User", "email": email, "password": "Str0ng@Pass1"},
     )
     assert resp.status_code == 201
     return resp.json()
@@ -90,7 +91,7 @@ async def test_reset_changes_the_password_and_ends_every_session(client, outbox)
     await client.post(RESET, json={"email": "reset@test.com"})
     token = outbox.token_for("reset@test.com", "Reset")
     confirm = await client.post(
-        RESET_CONFIRM, json={"token": token, "password": "NovaSenha@456"}
+        RESET_CONFIRM, json={"token": token, "password": "NewStr0ng@Pass2"}
     )
     assert confirm.status_code == 200
 
@@ -100,11 +101,11 @@ async def test_reset_changes_the_password_and_ends_every_session(client, outbox)
     assert (await client.post(REFRESH)).status_code in (401, 403)
 
     old = await client.post(
-        LOGIN, json={"email": "reset@test.com", "password": "Senha@123"}
+        LOGIN, json={"email": "reset@test.com", "password": "Str0ng@Pass1"}
     )
     assert old.status_code == 401
     new = await client.post(
-        LOGIN, json={"email": "reset@test.com", "password": "NovaSenha@456"}
+        LOGIN, json={"email": "reset@test.com", "password": "NewStr0ng@Pass2"}
     )
     assert new.status_code == 200
 

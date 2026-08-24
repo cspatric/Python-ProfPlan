@@ -1,0 +1,82 @@
+flowchart TB
+
+MEA["`MEASURED — 28 runs versioned in the repo
+single core · one IP per request so the
+rate limiter does not cap the test
+AI paths excluded to keep model latency
+out of CRUD latency`"]
+
+TAB["`250 users → 33 req/s · p95 26 ms · 0% fail
+500 users → 65 req/s · p95 46 ms · 0% fail
+750 users → 99 req/s · p95 545 ms · 0% fail
+— recommended ceiling on this machine
+1,000 users → 120 req/s · p95 1.1 s · 0.2%
+1,500 users → 89% fail
+1 → 4 workers: 66 → 140 req/s, same code`"]
+
+END["`ENDURANCE
+112,549 requests in 9 min · 208 req/s
+· 0% fail · p95 75 ms
+long run: 1.26M requests in 3 h 34 min
+· 300 users · 0.26% fail
+total measured: 2.45M requests`"]
+
+CALC["`CALCULATED — arithmetic, not measurement
+0.13 req/s per user (99 ÷ 750)
+80k users ≈ 10,600 req/s
+1M users ≈ 130,000 req/s
+180 req/s per worker as a conservative
+per-core capacity · +40% headroom for
+peaks, deploys and losing a zone`"]
+
+LB["`CLOUD LOAD BALANCER — production
+in front of the Traefiks,
+spreads traffic across zones`"]
+
+TRAEFIK["`TRAEFIK — distributes requests
+across API replicas · discovers containers
+by Docker labels · API is STATELESS:
+no sticky sessions, any replica serves
+any user — horizontal scale stays simple
+gap: LB health check not configured yet;
+a readiness endpoint (checks PostgreSQL
+and Redis) already exists — first fix
+before running multiple replicas`"]
+
+UVI["`UVICORN
+more workers per container`"]
+
+PGB["`PGBOUNCER
+controls the PostgreSQL
+connection pool`"]
+
+CEL["`CELERY
+spreads background work
+across machines`"]
+
+BOT["`EXPECTED BOTTLENECKS — shared resources,
+in order: PostgreSQL connection count
+→ read capacity (replicas + Redis cache)
+→ Redis contention
+→ Argon2 CPU during login peaks
+conclusion: the architecture reaches 1M users,
+but not by only adding containers — database,
+cache, workers and auth infra grow with it`"]
+
+MEA --> TAB
+MEA --> END
+TAB --> CALC
+CALC --> LB
+LB --> TRAEFIK --> UVI --> PGB
+TRAEFIK -.- CEL
+PGB --> BOT
+
+classDef mea fill:#e8efff,stroke:#2563eb,stroke-width:3px,color:#0b1220
+classDef calc fill:#fef9c3,stroke:#ca8a04,stroke-width:3px,color:#0b1220
+classDef mech fill:#e7f6ef,stroke:#0f766e,stroke-width:3px,color:#0b1220
+classDef warn fill:#fde8e8,stroke:#dc2626,stroke-width:3px,color:#0b1220
+
+class MEA,TAB,END mea
+class CALC calc
+class LB,TRAEFIK,UVI,PGB,CEL mech
+class BOT warn

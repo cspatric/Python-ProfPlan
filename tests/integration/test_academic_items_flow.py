@@ -85,3 +85,63 @@ async def test_response_carries_the_generation_status(auth_client, module_id):
 
     listed = await auth_client.get(f"{BASE}?module_id={module_id}")
     assert all("generation_status" in item for item in listed.json())
+
+
+class TestItemFigures:
+    """The figure endpoints.
+
+    The bytes are streamed by the API rather than served from object storage,
+    because MinIO has no published port and Traefik cannot route to it — there
+    is no URL for a browser to open. So the ownership check on these is the same
+    one every other read uses.
+    """
+
+    async def test_an_item_with_no_figures_answers_with_an_empty_list(
+        self, auth_client, subject_id, plan_id, module_id
+    ):
+        created = await auth_client.post(
+            BASE, json={"module_id": module_id, "title": "Neurons"}
+        )
+        item_id = created.json()["uuid"]
+
+        resp = await auth_client.get(f"{BASE}/{item_id}/figures")
+
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    async def test_figures_require_authentication(self, client, auth_client, module_id):
+        created = await auth_client.post(
+            BASE, json={"module_id": module_id, "title": "Neurons"}
+        )
+        item_id = created.json()["uuid"]
+        auth_client.cookies.clear()
+
+        assert (await client.get(f"{BASE}/{item_id}/figures")).status_code == 401
+
+    async def test_another_teachers_item_is_not_readable(
+        self, auth_client, module_id, user_factory, client
+    ):
+        created = await auth_client.post(
+            BASE, json={"module_id": module_id, "title": "Neurons"}
+        )
+        item_id = created.json()["uuid"]
+
+        await user_factory(email="someone-else@test.com")
+        await client.post(
+            "/api/v1/auth/login",
+            json={"email": "someone-else@test.com", "password": "Str0ng@Pass1"},
+        )
+
+        assert (await client.get(f"{BASE}/{item_id}/figures")).status_code == 404
+
+    async def test_a_figure_that_does_not_exist_is_404(self, auth_client, module_id):
+        created = await auth_client.post(
+            BASE, json={"module_id": module_id, "title": "Neurons"}
+        )
+        item_id = created.json()["uuid"]
+
+        resp = await auth_client.get(
+            f"{BASE}/{item_id}/figures/00000000-0000-0000-0000-000000000000"
+        )
+
+        assert resp.status_code == 404

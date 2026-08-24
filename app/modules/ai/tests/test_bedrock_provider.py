@@ -3,12 +3,16 @@
 No network: what is worth pinning down is the shape of the response, because
 that is what silently changes and what a wrong reading turns into a cost report
 that no longer matches the invoice.
+
+The provider is instantiated per model family (three of them ride this one
+class), so these tests pass an explicit model rather than reading a global.
 """
 
 import pytest
 
 from app.core.config import get_settings
 from app.modules.ai.domain.exceptions import ProviderUnavailableError
+from app.modules.ai.domain.tiers import Tier
 from app.modules.ai.infrastructure.providers.bedrock import BedrockProvider
 
 ANSWER = {
@@ -24,10 +28,14 @@ ANSWER = {
 }
 
 
+MODEL = "us.anthropic.claude-sonnet-5"
+FAST_MODEL = "us.anthropic.claude-haiku-4-5"
+
+
 def _provider(monkeypatch, answer=ANSWER, key="a-key"):
     settings = get_settings()
     monkeypatch.setattr(settings, "bedrock_api_key", key, raising=False)
-    provider = BedrockProvider()
+    provider = BedrockProvider(name="claude", model=MODEL, fast_model=FAST_MODEL)
     captured: dict = {}
 
     async def _post(url, *, headers, json):
@@ -49,7 +57,7 @@ async def test_the_answer_and_the_tokens_are_read(monkeypatch):
     assert completion.usage.input_tokens == 13
     assert completion.usage.output_tokens == 4
     # Converse does not echo the model, and the profile id is what was billed.
-    assert completion.model == get_settings().bedrock_model
+    assert completion.model == MODEL
 
 
 async def test_cached_tokens_are_counted_rather_than_dropped(monkeypatch):
@@ -93,7 +101,7 @@ async def test_the_model_is_addressed_through_the_runtime_endpoint(monkeypatch):
     settings = get_settings()
     assert captured["url"] == (
         f"https://bedrock-runtime.{settings.bedrock_region}.amazonaws.com"
-        f"/model/{settings.bedrock_model}/converse"
+        f"/model/{MODEL}/converse"
     )
 
 
@@ -114,3 +122,31 @@ async def test_without_a_key_the_provider_says_so(monkeypatch):
 
     with pytest.raises(ProviderUnavailableError):
         await provider.generate("hello")
+
+
+async def test_the_fast_tier_addresses_the_smaller_model_of_the_family(monkeypatch):
+    """The chain picks the family, the tier picks the size within it: the same
+    credential and the same endpoint host, a different model id."""
+    provider, captured = _provider(monkeypatch)
+
+    completion = await provider.generate("hello", tier=Tier.FAST)
+
+    assert completion.model == FAST_MODEL
+    assert f"/model/{FAST_MODEL}/converse" in captured["url"]
+
+
+async def test_a_family_with_no_small_model_answers_everything_with_its_one(
+    monkeypatch,
+):
+    """Falling back to the expensive model is a larger bill; falling back to
+    nothing is a plan that never arrives."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "bedrock_api_key", "a-key", raising=False)
+    provider = BedrockProvider(name="claude", model=MODEL, fast_model="")
+
+    async def _post(url, *, headers, json):
+        return ANSWER
+
+    monkeypatch.setattr(provider, "_post", _post)
+
+    assert (await provider.generate("x", tier=Tier.FAST)).model == MODEL

@@ -10,10 +10,10 @@ from app.core.config import get_settings
 from app.core.security import (
     create_access_token,
     create_refresh_token,
-    hash_password,
+    hash_password_async,
     hash_token,
     password_needs_rehash,
-    verify_password,
+    verify_password_async,
 )
 from app.modules.auth.application.dto import IssuedTokens
 from app.modules.auth.domain.exceptions import (
@@ -67,7 +67,7 @@ class AuthService:
             raise EmailAlreadyRegisteredError
 
         user = await self._users.create(
-            name=name, email=email, password_hash=hash_password(password)
+            name=name, email=email, password_hash=await hash_password_async(password)
         )
         tokens = await self._issue_tokens(user, ip_address, user_agent)
         await self._auth_logs.record(
@@ -119,7 +119,7 @@ class AuthService:
             # saying "that address signs in with Google" here would confirm
             # the address exists to anyone who asks.
             or user.password_hash is None
-            or not verify_password(password, user.password_hash)
+            or not await verify_password_async(password, user.password_hash)
         ):
             await self._rate_limiter.register_failure(ip_key)
             await self._rate_limiter.register_failure(account_key)
@@ -145,7 +145,7 @@ class AuthService:
         # settings protects new accounts and leaves every existing one on the
         # old parameters forever.
         if user.password_hash and password_needs_rehash(user.password_hash):
-            user.password_hash = hash_password(password)
+            user.password_hash = await hash_password_async(password)
 
         if get_settings().require_email_verification and user.email_verified_at is None:
             await self._auth_logs.record(

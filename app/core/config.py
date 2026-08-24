@@ -52,17 +52,34 @@ class Settings(BaseSettings):
     # mode can hand the next statement to a different backend. Empty means
     # "same as database_url", which is correct when there is no pooler.
     database_direct_url: str = ""
+    # A read replica, for queries that tolerate replication lag. Empty means
+    # there is no replica and every read stays on the primary — which is the
+    # current deployment. Setting it is the whole of "add read capacity": the
+    # second engine appears, the read dependency starts using it, and no
+    # business code changes. Point it at the replica's own pooler.
+    database_replica_url: str = ""
     # True when database_url points at PgBouncer in transaction mode. It
     # changes how asyncpg handles prepared statements; without it the app
     # fails intermittently under load, which is the worst way to find out.
     db_pgbouncer: bool = False
 
-    # API-process DB pool. Deliberate, documented numbers instead of silent
-    # SQLAlchemy defaults, sized with headroom under Postgres' max_connections.
-    # With PgBouncer in front, this pool holds cheap pooler connections, and
-    # the expensive Postgres backends are shared behind it.
-    db_pool_size: int = 10
-    db_max_overflow: int = 20
+    # API-container DB connection budget, not a per-process pool size. The
+    # number that has to stay under the server's limit is what one CONTAINER
+    # presents, and a container holds one pool per uvicorn worker — so the
+    # per-process pool is derived by dividing this budget by the worker count
+    # (see app/infrastructure/database/session.py). Raising UVICORN_WORKERS
+    # then costs nothing to reason about: the container's footprint is
+    # unchanged, and scaling out is this one number times the replica count.
+    db_client_conn_budget: int = 30
+    # How many uvicorn workers this container runs. docker/api/start-api.sh
+    # already reads UVICORN_WORKERS to launch them; this makes the same value
+    # visible to the app, which is what lets the pool derive itself.
+    uvicorn_workers: int = 1
+    # Explicit per-process overrides. None means "derive from the budget",
+    # which is the path that needs no maintenance; set them only to pin a
+    # process to numbers the budget would not produce.
+    db_pool_size: int | None = None
+    db_max_overflow: int | None = None
     db_pool_timeout: int = 30
 
     # JWT
@@ -144,11 +161,11 @@ class Settings(BaseSettings):
     # the slowest machine measured, so this leaves several times that in hand.
     embedding_timeout_seconds: float = 300.0
 
-    # LLM gateway (fallback chain: Claude -> OpenAI -> Gemini -> Ollama)
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-5"
-    anthropic_fast_model: str = "claude-haiku-4-5"
-
+    # LLM gateway. Every remote model is reached through Amazon Bedrock; the
+    # only other provider is the local Ollama, which is the floor of the
+    # fallback chain. There is no direct-vendor integration on purpose: one
+    # account, one bill, one credential, one quota.
+    #
     # Amazon Bedrock, authenticated with a Bedrock API key rather than SigV4:
     # one bearer header, no boto3 and no credential chain. The model id must
     # be an *inference profile* (us. / global. prefix) for Anthropic's newer
@@ -156,17 +173,48 @@ class Settings(BaseSettings):
     # message that reads like a permissions error.
     bedrock_api_key: str = ""
     bedrock_region: str = "us-east-1"
-    bedrock_model: str = "us.anthropic.claude-sonnet-5"
-    #: The model this provider answers a FAST call with. Empty means it has
-    #: only one model and uses it for everything.
-    bedrock_fast_model: str = "us.amazon.nova-lite-v1:0"
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o"
-    openai_fast_model: str = "gpt-4o-mini"
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
-    gemini_fast_model: str = "gemini-flash-lite-latest"
+
+    # One credential, three model families, and a larger and a smaller model in
+    # each: the chain picks the family, the tier picks the size. A family whose
+    # fast model is left empty answers everything with its one model.
+    #
+    # Anthropic. Leads the standard chain: the call that decides.
+    bedrock_claude_model: str = "us.anthropic.claude-sonnet-5"
+    bedrock_claude_fast_model: str = "us.anthropic.claude-haiku-4-5"
+    # Amazon Nova. Leads the fast chain: cheapest per token of the three, and
+    # bulk drafting against a decided roadmap is where the tokens are.
+    bedrock_nova_model: str = "us.amazon.nova-pro-v1:0"
+    bedrock_nova_fast_model: str = "us.amazon.nova-lite-v1:0"
+    # OpenAI. What Bedrock serves of OpenAI is the *open-weight* gpt-oss
+    # family, not the proprietary GPT-4o/5 line, which is not on Bedrock at
+    # all. Confirm the exact id and that model access is granted for the
+    # account before relying on it: a wrong id answers "not available for this
+    # account", which reads like a permissions problem and is not one.
+    bedrock_openai_model: str = "openai.gpt-oss-120b-1:0"
+    bedrock_openai_fast_model: str = "openai.gpt-oss-20b-1:0"
+
     ollama_chat_model: str = "llama3.2:3b"
+
+    # Figures on generated items. The item generator asks for an illustration by
+    # describing it ({{figure: ...}}); this is where that description is turned
+    # into a real, licensed image. Off by default in tests and CI, which have no
+    # business reaching a public API.
+    figures_enabled: bool = True
+    commons_api_url: str = "https://commons.wikimedia.org/w/api.php"
+    #: Wikimedia's policy requires an agent that identifies the application and
+    #: gives a contact. A generic client is answered with 403, not with results.
+    figure_user_agent: str = (
+        "ProfPlan/1.0 (teaching-plan generator; +https://github.com/profplan)"
+    )
+    #: Commons renders the file at this width and hands back a PNG or JPEG, which
+    #: is how an SVG diagram becomes something WeasyPrint can lay into a PDF.
+    figure_thumbnail_width: int = 800
+    figure_search_timeout_seconds: float = 15.0
+    #: Candidates considered per description; the first usable one is taken.
+    figure_search_limit: int = 5
+    #: A week. The diagrams on Commons do not move, and the same description
+    #: recurs across the items of one module.
+    figure_cache_ttl_seconds: int = 604800
     ollama_fast_model: str = ""
     llm_max_tokens: int = 2048
     llm_timeout_seconds: float = 60.0
@@ -191,12 +239,18 @@ class Settings(BaseSettings):
     # and a request per minute on an expensive model is still a bill.
     llm_monthly_budget_usd: float = 5.0
 
-    # Which providers answer which class of call, in order. Two chains rather
-    # than one, because the cheap tier is not simply the same chain with a
-    # smaller model: the provider that is best at bulk drafting for the money
-    # is not necessarily the one that should decide a roadmap.
-    llm_standard_chain: str = "claude,bedrock,openai,gemini,ollama"
-    llm_fast_chain: str = "gemini,bedrock,openai,ollama"
+    # Which model families answer which class of call, in order. Every name
+    # here except ollama is a Bedrock family (see the model ids above).
+    #
+    # Two chains rather than one, because the cheap tier is not the same chain
+    # with a smaller model: Claude leads the calls that decide and is absent
+    # from the fast chain entirely, because forty drafting calls on a frontier
+    # model is a bill dominated by the least difficult work. Nova leads the
+    # bulk. OpenAI sits second in both as the family-level fallback, so a
+    # single family being throttled does not drop the product to the local
+    # model. Ollama is last in both: the floor, always.
+    llm_standard_chain: str = "claude,openai,ollama"
+    llm_fast_chain: str = "nova,openai,ollama"
 
     rag_hybrid_search: bool = True
     #: How many candidates each half contributes before fusion. Larger than the
@@ -213,17 +267,28 @@ class Settings(BaseSettings):
     llm_max_concurrency: int = 5
     # Cache embeddings in Redis to avoid re-embedding identical text (7 days).
     embedding_cache_ttl_seconds: int = 604800
+    # Keys per bulk Redis command. Redis runs commands on one thread, so an
+    # unbounded MGET or a per-key write loop makes one big document everybody
+    # else's latency problem. Bounding it means the cost of a command is a
+    # constant of configuration instead of a function of what a user uploaded.
+    redis_batch_size: int = 64
 
     # Email. Off by default: with EMAIL_ENABLED=false the message is written
     # to the log instead of sent, which is what development and CI want (the
     # link is the point, a mail server is not). Delivery always happens in a
     # Celery task, never in the request.
+    #
+    # The defaults describe the one transport this project uses, Resend over
+    # submission TLS. They used to point at a local capture server on 1025,
+    # which is no longer part of the stack — a default naming a host that does
+    # not exist fails with a DNS error, and a DNS error reads as a network
+    # problem rather than as missing configuration.
     email_enabled: bool = False
-    smtp_host: str = "mailpit"
-    smtp_port: int = 1025
+    smtp_host: str = "smtp.resend.com"
+    smtp_port: int = 587
     smtp_username: str = ""
     smtp_password: str = ""
-    smtp_use_tls: bool = False
+    smtp_use_tls: bool = True
     smtp_timeout_seconds: float = 10.0
     email_from_address: str = "no-reply@profplan.local"
     email_from_name: str = "ProfPlan"
